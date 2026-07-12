@@ -1,6 +1,11 @@
 node_modules/
 dist/
 coverage/
+*.tsbuildinfo
+.turbo/
+.vite/
+.eslintcache
+.pnpm-debug.log*
 .env
 .env.*
 !.env.example
