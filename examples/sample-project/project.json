@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 0,
+  "project": {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "name": "Sample UI Project"
+  },
+  "settings": {
+    "layoutProfileSelection": {
+      "mode": "aspect-ratio",
+      "mobileMaxAspectRatio": 1
+    }
+  },
+  "assets": [
+    {
+      "id": "10000000-0000-4000-8000-000000000005",
+      "name": "Sample Logo",
+      "type": "image",
+      "source": {
+        "uri": "assets/sample-logo.png",
+        "mediaType": "image/png",
+        "version": "source-v1"
+      }
+    }
+  ],
+  "prefabs": [],
+  "scenes": [
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "name": "Main Scene",
+      "rootNodeIds": ["10000000-0000-4000-8000-000000000003"],
+      "layout": {
+        "referenceViewports": {
+          "desktop": { "width": 1920, "height": 1080 },
+          "mobile": { "width": 390, "height": 844 }
+        }
+      },
+      "nodes": [
+        {
+          "id": "10000000-0000-4000-8000-000000000003",
+          "name": "Root",
+          "type": "container",
+          "parentId": null,
+          "children": [
+            "10000000-0000-4000-8000-000000000004",
+            "10000000-0000-4000-8000-000000000006"
+          ],
+          "visible": true,
+          "transform": { "x": 0, "y": 0, "width": 1920, "height": 1080, "scaleX": 1, "scaleY": 1, "rotation": 0 }
+        },
+        {
+          "id": "10000000-0000-4000-8000-000000000004",
+          "name": "Logo",
+          "type": "image",
+          "assetId": "10000000-0000-4000-8000-000000000005",
+          "parentId": "10000000-0000-4000-8000-000000000003",
+          "children": [],
+          "visible": true,
+          "transform": { "x": 800, "y": 160, "width": 320, "height": 160, "scaleX": 1, "scaleY": 1, "rotation": 0 },
+          "layoutOverrides": {
+            "mobile": {
+              "transform": { "x": 35, "y": 80, "width": 320, "height": 160 }
+            }
+          }
+        },
+        {
+          "id": "10000000-0000-4000-8000-000000000006",
+          "name": "Greeting",
+          "type": "text",
+          "text": "Welcome",
+          "parentId": "10000000-0000-4000-8000-000000000003",
+          "children": [],
+          "visible": true,
+          "binding": "welcomeLabel",
+          "transform": { "x": 820, "y": 400, "width": 280, "height": 64, "scaleX": 1, "scaleY": 1, "rotation": 0 }
+        }
+      ]
+    }
+  ]
+}

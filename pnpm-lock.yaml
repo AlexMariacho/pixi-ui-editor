@@ -25,7 +25,11 @@ importers:
 
   packages/exporter: {}
 
-  packages/runtime-pixi: {}
+  packages/runtime-pixi:
+    dependencies:
+      '@pixi-ui-editor/schema':
+        specifier: workspace:*
+        version: link:../schema
 
   packages/schema:
     dependencies:

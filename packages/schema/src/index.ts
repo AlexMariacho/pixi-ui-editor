@@ -61,6 +61,20 @@ function semantic(document: ProjectDocument): ValidationIssue[] {
   document.scenes.forEach((scene, i) => { scene.nodes.forEach((node, j) => register(node.id, `/scenes/${i}/nodes/${j}/id`)); hierarchy(scene, `/scenes/${i}`, assets, prefabs, issues); const bindings = new Set<string>(); scene.nodes.forEach((node, j) => { if (node.binding !== undefined) { const binding = node.binding.trim(); if (!binding) add(issues, "EMPTY_BINDING", `/scenes/${i}/nodes/${j}/binding`, "Binding must not be empty after trimming."); else if (bindings.has(binding)) add(issues, "DUPLICATE_BINDING", `/scenes/${i}/nodes/${j}/binding`, `Binding '${binding}' is duplicated in this scene.`); else bindings.add(binding); } }); });
   return issues;
 }
-export function validateProjectDocument(input: unknown): ValidationResult { if (!structural(input)) return { valid: false, issues: (structural.errors ?? []).map((error: ErrorObject) => ({ code: "STRUCTURAL_SCHEMA", path: error.instancePath || "/", message: error.message ?? "Invalid document structure.", severity: "error" })) }; const issues = semantic(input as ProjectDocument); return { valid: issues.length === 0, issues }; }
+function collectNonFiniteNumbers(input: unknown, path: string, issues: ValidationIssue[]): void {
+  if (typeof input === "number") {
+    if (!Number.isFinite(input)) add(issues, "NON_FINITE_NUMBER", path, "Numbers must be finite.");
+    return;
+  }
+  if (Array.isArray(input)) input.forEach((value, index) => collectNonFiniteNumbers(value, `${path}/${index}`, issues));
+  else if (typeof input === "object" && input !== null) Object.entries(input).forEach(([key, value]) => collectNonFiniteNumbers(value, `${path}/${key}`, issues));
+}
+export function validateProjectDocument(input: unknown): ValidationResult { if (!structural(input)) return { valid: false, issues: (structural.errors ?? []).map((error: ErrorObject) => ({ code: "STRUCTURAL_SCHEMA", path: error.instancePath || "/", message: error.message ?? "Invalid document structure.", severity: "error" })) }; const issues: ValidationIssue[] = []; collectNonFiniteNumbers(input, "", issues); issues.push(...semantic(input as ProjectDocument)); return { valid: issues.length === 0, issues }; }
 export function assertProjectDocument(input: unknown): asserts input is ProjectDocument { const result = validateProjectDocument(input); if (!result.valid) throw new TypeError(`Invalid ProjectDocument: ${result.issues.map((x) => `${x.code} at ${x.path}`).join(", ")}`); }
 export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 0 || version !== CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input); assertProjectDocument(migrated); return migrated; }
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));
+  return value;
+}
+export function serializeProjectDocument(document: ProjectDocument): string { assertProjectDocument(document); return `${JSON.stringify(canonicalizeJson(document))}\n`; }
