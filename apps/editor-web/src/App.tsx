@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
 import type { ProjectDocument, UINode } from "@pixi-ui-editor/schema";
-import { Application, Container, Graphics, Rectangle } from "pixi.js";
+import { Application, Container, Graphics, Rectangle, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore } from "./store.js";
 import { Inspector } from "./Inspector.js";
 
@@ -36,6 +36,13 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
   const selectionGraphicsRef = useRef<Graphics | null>(null);
+  const dragRef = useRef<{
+    nodeId: string;
+    parentView: Container;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const startDragRef = useRef<((nodeId: string, nodeView: Container, event: FederatedPointerEvent) => void) | null>(null);
   const [application, setApplication] = useState<Application | null>(null);
 
   useEffect(() => {
@@ -56,6 +63,47 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
       application.stage.eventMode = "static";
       application.stage.hitArea = new Rectangle(0, 0, application.screen.width, application.screen.height);
       application.stage.on("pointerdown", () => useEditorStore.getState().selectNode(null));
+
+      const stopDrag = () => {
+        dragRef.current = null;
+        application.stage.off("pointermove", moveDraggedNode);
+        application.stage.off("pointerup", stopDrag);
+        application.stage.off("pointerupoutside", stopDrag);
+      };
+      const moveDraggedNode = (event: FederatedPointerEvent) => {
+        const drag = dragRef.current;
+        if (drag === null) return;
+
+        const localPosition = drag.parentView.toLocal(event.global);
+        const node = useEditorStore.getState().document.scenes
+          .find((candidate) => candidate.id === sceneId)?.nodes.find((candidate) => candidate.id === drag.nodeId);
+        if (node === undefined) return;
+
+        useEditorStore.getState().updateNode(drag.nodeId, {
+          transform: {
+            ...node.transform,
+            x: Math.round((localPosition.x - drag.offsetX) * 100) / 100,
+            y: Math.round((localPosition.y - drag.offsetY) * 100) / 100,
+          },
+        });
+      };
+
+      const startDrag = (nodeId: string, nodeView: Container, event: FederatedPointerEvent) => {
+        const parentView = nodeView.parent;
+        if (parentView === null) return;
+
+        const localPosition = parentView.toLocal(event.global);
+        dragRef.current = {
+          nodeId,
+          parentView,
+          offsetX: localPosition.x - nodeView.position.x,
+          offsetY: localPosition.y - nodeView.position.y,
+        };
+        application.stage.on("pointermove", moveDraggedNode);
+        application.stage.on("pointerup", stopDrag);
+        application.stage.on("pointerupoutside", stopDrag);
+      };
+      startDragRef.current = startDrag;
       application.stage.addChild(overlay);
       selectionGraphicsRef.current = selectionGraphics;
       setApplication(application);
@@ -82,6 +130,7 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
       nodeView.on("pointerdown", (event) => {
         event.stopPropagation();
         useEditorStore.getState().selectNode(nodeId);
+        startDragRef.current?.(nodeId, nodeView, event);
       });
     }
 

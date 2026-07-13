@@ -19,8 +19,18 @@ All folders below are part of one pnpm workspace ([pnpm-workspace.yaml](pnpm-wor
 
 ## Requirements
 
-- Node.js 20+ (Node.js 22 LTS recommended)
+- Node.js **20.19+ or 22.12+** (Node.js 22 LTS recommended)
 - pnpm 10
+
+`apps/editor-web` uses Vite 7. Node.js 20.11.0 is sufficient for the workspace
+build and tests, but cannot start the Vite development server: Vite fails with
+`TypeError: crypto.hash is not a function`. Check the active version before
+starting the editor:
+
+```powershell
+node --version
+pnpm --version
+```
 
 If `pnpm` is not on your PATH, install it once:
 
@@ -43,7 +53,28 @@ pnpm test
 
 Run `pnpm build` before `pnpm typecheck`: package type declarations are resolved from `dist/`, so typechecking fails until the workspace has been built once.
 
-There is no runnable server or editor UI yet. `apps/api`, `apps/editor-web`, and `apps/runtime-demo` are placeholder workspaces; the current iteration only delivers the document schema, validation, serialization, and the headless document loader, all verified through the commands above.
+## Run the editor
+
+The visual editor is available in `apps/editor-web`. After installing
+dependencies and using a supported Node.js version, start it from the repository root:
+
+```powershell
+pnpm --filter @pixi-ui-editor/editor-web dev
+```
+
+Open the URL printed by Vite (normally `http://localhost:5173/`). If that port
+is occupied, Vite selects the next free port; use the exact URL from its output.
+Stop the server with `Ctrl+C`.
+
+To inspect the production bundle locally:
+
+```powershell
+pnpm build
+pnpm --filter @pixi-ui-editor/editor-web preview
+```
+
+`preview` serves the already-built `apps/editor-web/dist`; it does not replace
+the development server and must be restarted after another build.
 
 ## Sample project smoke test
 

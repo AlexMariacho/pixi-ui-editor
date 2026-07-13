@@ -22,7 +22,7 @@ Pixi UI Editor — web-first редактор для сборки игровог
 
 ## Рабочий процесс разработки
 
-Требования: Node.js 20+ (рекомендован 22 LTS), pnpm 10 (`npm install -g pnpm@10.27.0`, если нет в PATH). Основная среда разработки — Windows; команды должны работать в PowerShell.
+Требования: Node.js **20.19+ или 22.12+** (рекомендован 22 LTS), pnpm 10 (`npm install -g pnpm@10.27.0`, если нет в PATH). Основная среда разработки — Windows; команды должны работать в PowerShell. Перед запуском editor-web проверьте `node --version`: Vite 7 не запускается на Node.js 20.11.0 и падает с `TypeError: crypto.hash is not a function`, хотя `pnpm build`, `pnpm typecheck` и `pnpm test` могут завершиться успешно.
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -34,6 +34,8 @@ pnpm test
 Важно: `pnpm typecheck` на чистом checkout падает до первого `pnpm build`, потому что типы межпакетных импортов резолвятся из `dist/` (`exports.types → ./dist/index.d.ts`). Это известное ограничение; если будете его устранять (project references и т.п.) — обновите README и эту секцию.
 
 Smoke-тест эталонного документа: `pnpm --filter @pixi-ui-editor/runtime-pixi test`. Путь к fixture захардкожен в тесте — не перемещайте `examples/sample-project/` без правки тестов.
+
+Запуск редактора из корня: `pnpm --filter @pixi-ui-editor/editor-web dev`; откройте URL из вывода Vite (обычно `http://localhost:5173/`). Если порт занят, Vite выберет следующий свободный порт. Для проверки production bundle сначала выполните `pnpm build`, затем `pnpm --filter @pixi-ui-editor/editor-web preview`.
 
 ## Проектирование новых итераций
 
