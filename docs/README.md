@@ -6,4 +6,4 @@
 - [План реализации MVP](game-ui-platform-implementation-plan-mvp-v3.md)
 - [Ревью zStudio](zstudio-review-for-game-ui-platform.md)
 - [Итерация 01 — технический foundation](tasks/iteration-01-foundation/README.md)
-- [Итерация 02 — визуальный прототип редактора](tasks/iteration-02-editor-prototype/README.md)
+- [Итерация 02 — завершённый визуальный прототип редактора](tasks/iteration-02-editor-prototype/README.md)

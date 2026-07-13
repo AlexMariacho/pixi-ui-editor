@@ -15,10 +15,11 @@ Pixi UI Editor — web-first редактор для сборки игровог
 Поддерживайте эту секцию актуальной: обновляйте её при завершении итераций и принятии решений, меняющих состояние репозитория.
 
 - **Итерация 01 (Этап 0, технический foundation) завершена**: monorepo, schema v0 (`packages/schema`), headless loader (`packages/runtime-pixi`), эталонный документ `examples/sample-project/project.json`, ADR 0001.
-- Реальный код есть только в `packages/schema` и `packages/runtime-pixi`. Остальные пакеты и все `apps/*` — заглушки в одну строку; это соответствует плану, не «недоделка».
+- **Итерация 02 завершена**: `apps/editor-web` — работающий визуальный прототип на Vite/React/zustand/PixiJS. Он рендерит sample через shared runtime, поддерживает selection, inspector, drag, добавление/удаление nodes и восстановление документа из `localStorage`; архитектура зафиксирована в ADR 0002.
+- Остальные `apps/*` и пакеты, кроме `packages/schema` и `packages/runtime-pixi`, остаются запланированными заглушками.
 - **CI намеренно отсутствует** (решение владельца проекта от июля 2026): GitHub Actions вернём после того, как появится работающее приложение. Не добавляйте workflow без явного запроса.
-- PixiJS, React и серверный framework ещё не подключены. Их появление — предмет следующих итераций и, для архитектурно значимых выборов, отдельных ADR.
-- **Итерация 02 спроектирована, но не начата**: визуальный прототип редактора (rendering sample project, selection, inspector, drag, add/delete nodes, localStorage). Задачи TASK-004…TASK-009 в [`docs/tasks/iteration-02-editor-prototype/`](docs/tasks/iteration-02-editor-prototype/README.md); каждая задача обязана заканчиваться визуально проверяемым результатом в браузере.
+- PixiJS и React подключены только в `apps/editor-web`; серверный framework ещё не выбран.
+- Следующий продуктовый фронт — спроектировать очередную итерацию сквозного MVP вокруг реальных assets (включая Spine) и desktop/mobile authoring, не расширяя scope timeline или gameplay-поведением.
 
 ## Рабочий процесс разработки
 

@@ -1,7 +1,15 @@
-import { loadProjectDocument } from "@pixi-ui-editor/runtime-pixi";
-import { validateProjectDocument, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
+import { loadProjectDocument, parseProjectDocumentJson } from "@pixi-ui-editor/runtime-pixi";
+import {
+  createStableId,
+  serializeProjectDocument,
+  validateProjectDocument,
+  type ProjectDocument,
+  type UINode,
+} from "@pixi-ui-editor/schema";
 import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
+
+export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 
 export type EditorState = {
   document: ProjectDocument;
@@ -9,18 +17,48 @@ export type EditorState = {
   selectedNodeId: string | null;
   selectNode(id: string | null): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible" | "transform">> & { text?: string }): void;
+  addNode(type: "container" | "image" | "text"): void;
+  deleteNode(nodeId: string): void;
+  resetToSample(): void;
 };
 
-const document = loadProjectDocument(sampleJson);
-const firstScene = document.scenes[0];
+const sampleDocument = loadProjectDocument(sampleJson);
+const firstScene = sampleDocument.scenes[0];
 
 if (firstScene === undefined) {
   throw new Error("The sample project must contain at least one scene.");
 }
 
+function loadInitialDocument(): ProjectDocument {
+  if (typeof localStorage === "undefined") return structuredClone(sampleDocument);
+
+  const storedDocument = localStorage.getItem(DOCUMENT_STORAGE_KEY);
+  if (storedDocument === null) return structuredClone(sampleDocument);
+
+  try {
+    return parseProjectDocumentJson(storedDocument);
+  } catch (error) {
+    console.warn("The saved project document could not be loaded. The sample document will be used instead.", error);
+    return structuredClone(sampleDocument);
+  }
+}
+
+function commitCandidate(state: EditorState, candidate: ProjectDocument, failureMessage: string): Partial<EditorState> | EditorState {
+  const validation = validateProjectDocument(candidate);
+  if (!validation.valid) {
+    console.warn(failureMessage, validation.issues);
+    return state;
+  }
+
+  return { document: candidate };
+}
+
+let skipNextPersistence = false;
+const initialDocument = loadInitialDocument();
+
 export const useEditorStore = create<EditorState>((set) => ({
-  document,
-  sceneId: firstScene.id,
+  document: initialDocument,
+  sceneId: initialDocument.scenes[0]?.id ?? firstScene.id,
   selectedNodeId: null,
   selectNode: (id) => set({ selectedNodeId: id }),
   updateNode: (nodeId, patch) => set((state) => {
@@ -38,12 +76,103 @@ export const useEditorStore = create<EditorState>((set) => ({
     if (patch.transform !== undefined) node.transform = patch.transform;
     if (patch.text !== undefined && node.type === "text") node.text = patch.text;
 
-    const validation = validateProjectDocument(candidate);
-    if (!validation.valid) {
-      console.warn("Node update was rejected because it makes the project document invalid.", validation.issues);
+    return commitCandidate(state, candidate, "Node update was rejected because it makes the project document invalid.");
+  }),
+  addNode: (type) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    if (scene === undefined) {
+      console.warn(`Cannot add a node: scene '${state.sceneId}' does not exist.`);
       return state;
     }
 
-    return { document: candidate };
+    const selectedNode = scene.nodes.find((node) => node.id === state.selectedNodeId);
+    const selectedParent = selectedNode?.type === "container" ? selectedNode : undefined;
+    const leafParent = selectedNode?.parentId === null || selectedNode?.parentId === undefined
+      ? undefined
+      : scene.nodes.find((node) => node.id === selectedNode.parentId && node.type === "container");
+    const parent = selectedParent ?? leafParent;
+    const nodeNumber = candidate.scenes.reduce(
+      (count, candidateScene) => count + candidateScene.nodes.filter((node) => node.type === type).length,
+      candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
+    ) + 1;
+    const transform = { x: 50, y: 50, width: 100, height: 100, scaleX: 1, scaleY: 1, rotation: 0 };
+    const base = {
+      id: createStableId(),
+      name: `${type[0]!.toUpperCase()}${type.slice(1)} ${nodeNumber}`,
+      parentId: parent?.id ?? null,
+      children: [],
+      visible: true,
+      transform,
+    };
+
+    let node: UINode;
+    if (type === "image") {
+      const asset = candidate.assets.find((candidateAsset) => candidateAsset.type === "image");
+      if (asset === undefined) {
+        console.warn("Cannot add an image node: the project document does not contain an image asset.");
+        return state;
+      }
+      node = { ...base, type, assetId: asset.id };
+    } else if (type === "text") {
+      node = { ...base, type, text: "New text" };
+    } else {
+      node = { ...base, type };
+    }
+
+    scene.nodes.push(node);
+    if (parent === undefined) scene.rootNodeIds.push(node.id);
+    else parent.children.push(node.id);
+
+    return commitCandidate(state, candidate, "Node creation was rejected because it makes the project document invalid.");
+  }),
+  deleteNode: (nodeId) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    const node = scene?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (scene === undefined || node === undefined) {
+      console.warn(`Cannot delete node '${nodeId}': it does not exist in the selected scene.`);
+      return state;
+    }
+    if (node.parentId === null && scene.rootNodeIds.length === 1) return state;
+
+    const nodesById = new Map(scene.nodes.map((candidateNode) => [candidateNode.id, candidateNode]));
+    const deletedIds = new Set<string>();
+    const collectSubtree = (id: string) => {
+      if (deletedIds.has(id)) return;
+      deletedIds.add(id);
+      nodesById.get(id)?.children.forEach(collectSubtree);
+    };
+    collectSubtree(node.id);
+
+    scene.nodes = scene.nodes.filter((candidateNode) => !deletedIds.has(candidateNode.id));
+    scene.rootNodeIds = scene.rootNodeIds.filter((rootNodeId) => !deletedIds.has(rootNodeId));
+    for (const remainingNode of scene.nodes) {
+      remainingNode.children = remainingNode.children.filter((childId) => !deletedIds.has(childId));
+    }
+
+    const committed = commitCandidate(state, candidate, "Node deletion was rejected because it makes the project document invalid.");
+    return committed === state ? state : { ...committed, selectedNodeId: null };
+  }),
+  resetToSample: () => set(() => {
+    if (typeof localStorage !== "undefined") {
+      skipNextPersistence = true;
+      localStorage.removeItem(DOCUMENT_STORAGE_KEY);
+    }
+    return { document: structuredClone(sampleDocument), sceneId: firstScene.id, selectedNodeId: null };
   }),
 }));
+
+useEditorStore.subscribe((state) => {
+  if (typeof localStorage === "undefined") return;
+  if (skipNextPersistence) {
+    skipNextPersistence = false;
+    return;
+  }
+
+  try {
+    localStorage.setItem(DOCUMENT_STORAGE_KEY, serializeProjectDocument(state.document));
+  } catch (error) {
+    console.warn("The project document could not be saved to localStorage.", error);
+  }
+});

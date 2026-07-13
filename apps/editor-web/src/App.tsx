@@ -48,8 +48,10 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
   useEffect(() => {
     const application = new Application();
     let cancelled = false;
+    let initialized = false;
 
     void application.init({ background: 0x1e1e2e, resizeTo: hostRef.current! }).then(() => {
+      initialized = true;
       if (cancelled) {
         application.destroy(true);
         return;
@@ -114,7 +116,7 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
       sceneRootRef.current = null;
       nodeViewsRef.current = new Map();
       selectionGraphicsRef.current = null;
-      application.destroy(true);
+      if (initialized) application.destroy(true);
     };
   }, []);
 
@@ -184,16 +186,31 @@ export function App() {
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
+  const addNode = useEditorStore((state) => state.addNode);
+  const deleteNode = useEditorStore((state) => state.deleteNode);
+  const resetToSample = useEditorStore((state) => state.resetToSample);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
 
   if (scene === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
 
+  const selectedNode = scene.nodes.find((node) => node.id === selectedNodeId);
+  const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && scene.rootNodeIds.length === 1);
+
   return (
     <main className="editor-shell">
-      <header className="toolbar"><strong>Pixi UI Editor</strong><span>{document.project.name}</span></header>
+      <header className="toolbar">
+        <strong>Pixi UI Editor</strong><span>{document.project.name}</span>
+        <div className="toolbar-actions">
+          <button type="button" onClick={() => addNode("container")}>+ Container</button>
+          <button type="button" onClick={() => addNode("image")}>+ Image</button>
+          <button type="button" onClick={() => addNode("text")}>+ Text</button>
+          <button type="button" disabled={deleteDisabled} onClick={() => selectedNodeId !== null && deleteNode(selectedNodeId)}>Delete</button>
+          <button type="button" onClick={resetToSample}>Reset to sample</button>
+        </div>
+      </header>
       <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /></aside>
       <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} selectedNodeId={selectedNodeId} /></section>
-      <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={scene.nodes.find((node) => node.id === selectedNodeId)} /></aside>
+      <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );
 }

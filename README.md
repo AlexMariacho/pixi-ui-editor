@@ -6,13 +6,13 @@ TypeScript monorepo for the Pixi UI Editor foundation.
 
 All folders below are part of one pnpm workspace ([pnpm-workspace.yaml](pnpm-workspace.yaml)); root commands such as `pnpm build` run across every app and package at once.
 
-- `apps/` — runnable applications (currently placeholders, implemented in later iterations):
-  - `editor-web` — the visual editor (browser app);
+- `apps/` — runnable applications:
+  - `editor-web` — the working visual editor prototype (browser app);
   - `runtime-demo` — demo showing an authored UI rendered by the PixiJS runtime;
   - `api` — backend for project storage and publishing.
 - `packages/` — shared libraries consumed by the apps:
   - `schema` — the document contract: types, runtime schema, validation, migrations, deterministic serialization;
-  - `runtime-pixi` — headless document loading boundary (PixiJS rendering comes later);
+  - `runtime-pixi` — document loading and shared PixiJS scene rendering;
   - `editor-core`, `exporter`, `validators`, `shared` — placeholders for later iterations.
 - `examples/sample-project/` — the version-controlled reference document (`project.json`) used by the smoke tests; not application code.
 - `docs/` — product concept, MVP implementation plan, iteration tasks, and ADRs.
@@ -65,6 +65,8 @@ pnpm --filter @pixi-ui-editor/editor-web dev
 Open the URL printed by Vite (normally `http://localhost:5173/`). If that port
 is occupied, Vite selects the next free port; use the exact URL from its output.
 Stop the server with `Ctrl+C`.
+
+The prototype supports hierarchy selection, inspector editing, canvas drag, node creation/deletion, and automatic restoration of the edited document from browser `localStorage`. Use `Reset to sample` in the toolbar to discard the saved draft and return to the reference project.
 
 To inspect the production bundle locally:
 
