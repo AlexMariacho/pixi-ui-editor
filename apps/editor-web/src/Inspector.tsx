@@ -1,6 +1,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { UINode } from "@pixi-ui-editor/schema";
+import { resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
 import { useEditorStore } from "./store.js";
 
 type InspectorWindowProps = {
@@ -113,15 +114,18 @@ function PivotField({ pivotX, pivotY, onChange }: { pivotX: number; pivotY: numb
 
 export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }) {
   const updateNode = useEditorStore((state) => state.updateNode);
+  const activeProfile = useEditorStore((state) => state.activeProfile);
+  const updateNodeProfileTransform = useEditorStore((state) => state.updateNodeProfileTransform);
 
   if (selectedNode === undefined) return <p className="inspector-empty">Select a node</p>;
 
+  const resolvedTransform = resolveProfileTransform(selectedNode, activeProfile).transform;
   const updateTransform = (patch: Partial<UINode["transform"]>) => {
-    updateNode(selectedNode.id, { transform: { ...selectedNode.transform, ...patch } });
+    updateNodeProfileTransform(selectedNode.id, patch);
   };
 
-  const pivotX = selectedNode.transform.pivotX ?? 0;
-  const pivotY = selectedNode.transform.pivotY ?? 0;
+  const pivotX = resolvedTransform.pivotX ?? 0;
+  const pivotY = resolvedTransform.pivotY ?? 0;
 
   return <div className="inspector-content">
     <InspectorWindow title="Node">
@@ -131,13 +135,13 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="ID"><output className="inspector-id">{selectedNode.id}</output></InspectorField>
     </InspectorWindow>
     <InspectorWindow title="Transform">
-      <NumberField label="X" value={selectedNode.transform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
-      <NumberField label="Y" value={selectedNode.transform.y} step={1} onChange={(value) => updateTransform({ y: value })} />
-      <NumberField label="Width" value={selectedNode.transform.width} step={1} onChange={(value) => updateTransform({ width: value })} />
-      <NumberField label="Height" value={selectedNode.transform.height} step={1} onChange={(value) => updateTransform({ height: value })} />
-      <NumberField label="Scale X" value={selectedNode.transform.scaleX} step={0.1} onChange={(value) => updateTransform({ scaleX: value })} />
-      <NumberField label="Scale Y" value={selectedNode.transform.scaleY} step={0.1} onChange={(value) => updateTransform({ scaleY: value })} />
-      <RotationField radians={selectedNode.transform.rotation} onChangeRadians={(value) => updateTransform({ rotation: value })} />
+      <NumberField label="X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
+      <NumberField label="Y" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value })} />
+      <NumberField label="Width" value={resolvedTransform.width} step={1} onChange={(value) => updateTransform({ width: value })} />
+      <NumberField label="Height" value={resolvedTransform.height} step={1} onChange={(value) => updateTransform({ height: value })} />
+      <NumberField label="Scale X" value={resolvedTransform.scaleX} step={0.1} onChange={(value) => updateTransform({ scaleX: value })} />
+      <NumberField label="Scale Y" value={resolvedTransform.scaleY} step={0.1} onChange={(value) => updateTransform({ scaleY: value })} />
+      <RotationField radians={resolvedTransform.rotation} onChangeRadians={(value) => updateTransform({ rotation: value })} />
       <PivotField pivotX={pivotX} pivotY={pivotY} onChange={(x, y) => updateTransform({ pivotX: x, pivotY: y })} />
     </InspectorWindow>
     {selectedNode.type === "text" && <InspectorWindow title="Text">

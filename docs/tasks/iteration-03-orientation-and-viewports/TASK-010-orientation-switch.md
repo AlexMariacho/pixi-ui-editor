@@ -58,4 +58,8 @@ pnpm test
 
 ## Отчёт исполнителя
 
+Выполнено: `activeProfile` и `setActiveProfile` находятся в zustand editor-state и не входят в сериализуемый `ProjectDocument`. Кнопка `⟳ Horizontal / Vertical` переключает профиль; `SceneCanvas` строит артборд и scene view по активному profile, выполняет Fit при его смене и перерисовывает selection.
+
+Проверки: `pnpm build`, `pnpm typecheck`, `pnpm test` завершились успешно. Ручная визуальная проверка в этом окружении не выполнена: установлен Node.js 20.11.0, а Vite dev требует 20.19+ или 22.12+ и завершается с `crypto.hash is not a function`.
+
 Опишите, где живёт `activeProfile`, как canvas реагирует на переключение, результаты визуальной проверки по шагам и результаты команд.

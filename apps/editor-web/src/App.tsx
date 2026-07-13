@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
-import type { ProjectDocument, UINode } from "@pixi-ui-editor/schema";
+import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore } from "./store.js";
 import { Inspector } from "./Inspector.js";
@@ -38,7 +38,7 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
   return <ul className="tree">{scene.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
 }
 
-function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectDocument; sceneId: string; selectedNodeId: string | null }) {
+function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId }: { document: ProjectDocument; sceneId: string; activeProfile: LayoutProfileId; selectedNodeId: string | null }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<Container | null>(null);
   const artboardRef = useRef<Graphics | null>(null);
@@ -47,6 +47,7 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
   const selectionGraphicsRef = useRef<Graphics | null>(null);
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
   const cameraFittedRef = useRef(false);
+  const renderedProfileRef = useRef<LayoutProfileId | null>(null);
   const fitCameraRef = useRef<(() => void) | null>(null);
   const dragRef = useRef<{
     nodeId: string;
@@ -186,16 +187,9 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
         if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
 
         const localPosition = parentView.toLocal(event.global);
-        const node = useEditorStore.getState().document.scenes
-          .find((candidate) => candidate.id === sceneId)?.nodes.find((candidate) => candidate.id === drag.nodeId);
-        if (node === undefined) return;
-
-        useEditorStore.getState().updateNode(drag.nodeId, {
-          transform: {
-            ...node.transform,
-            x: Math.round((localPosition.x - drag.offsetX) * 100) / 100,
-            y: Math.round((localPosition.y - drag.offsetY) * 100) / 100,
-          },
+        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, {
+          x: Math.round((localPosition.x - drag.offsetX) * 100) / 100,
+          y: Math.round((localPosition.y - drag.offsetY) * 100) / 100,
         });
       };
       startDragRef.current = (nodeId, nodeView, event) => {
@@ -240,11 +234,13 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
     const scene = document.scenes.find((candidate) => candidate.id === sceneId);
     if (scene === undefined) throw new Error(`Scene '${sceneId}' does not exist in the project document.`);
 
-    const viewport = scene.layout.referenceViewports.desktop;
+    const profileChanged = renderedProfileRef.current !== activeProfile;
+    renderedProfileRef.current = activeProfile;
+    const viewport = scene.layout.referenceViewports[activeProfile];
     viewportRef.current = { width: viewport.width, height: viewport.height };
     artboardRef.current?.clear().rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
-    const { root, nodeViews } = buildSceneView(document, sceneId, "desktop");
+    const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile);
     for (const [nodeId, nodeView] of nodeViews) {
       nodeView.eventMode = "static";
       nodeView.on("pointerdown", (event) => {
@@ -260,7 +256,7 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
     nodeViewsRef.current = nodeViews;
     world.addChild(root);
 
-    if (!cameraFittedRef.current) {
+    if (!cameraFittedRef.current || profileChanged) {
       cameraFittedRef.current = true;
       fitCameraRef.current?.();
     }
@@ -272,11 +268,11 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
         nodeViewsRef.current = new Map();
       }
     };
-  }, [application, document, sceneId]);
+  }, [activeProfile, application, document, sceneId]);
 
   useEffect(() => {
     redrawSelectionRef.current();
-  }, [application, document, sceneId, selectedNodeId]);
+  }, [activeProfile, application, document, sceneId, selectedNodeId]);
 
   return (
     <div ref={hostRef} className="scene-canvas">
@@ -291,6 +287,8 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
 export function App() {
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
+  const activeProfile = useEditorStore((state) => state.activeProfile);
+  const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
   const addNode = useEditorStore((state) => state.addNode);
   const deleteNode = useEditorStore((state) => state.deleteNode);
@@ -311,11 +309,12 @@ export function App() {
           <button type="button" onClick={() => addNode("image")}>+ Image</button>
           <button type="button" onClick={() => addNode("text")}>+ Text</button>
           <button type="button" className="toolbar-danger" disabled={deleteDisabled} onClick={() => selectedNodeId !== null && deleteNode(selectedNodeId)}>Delete</button>
+          <button type="button" onClick={() => setActiveProfile(activeProfile === "desktop" ? "mobile" : "desktop")}>⟳ {activeProfile === "desktop" ? "Horizontal" : "Vertical"}</button>
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>
       <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /></aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} selectedNodeId={selectedNodeId} /></section>
+      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} selectedNodeId={selectedNodeId} /></section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );

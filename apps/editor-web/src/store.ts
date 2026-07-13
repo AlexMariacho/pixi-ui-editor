@@ -3,6 +3,7 @@ import {
   createStableId,
   serializeProjectDocument,
   validateProjectDocument,
+  type LayoutProfileId,
   type ProjectDocument,
   type UINode,
 } from "@pixi-ui-editor/schema";
@@ -14,9 +15,12 @@ export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorState = {
   document: ProjectDocument;
   sceneId: string;
+  activeProfile: LayoutProfileId;
   selectedNodeId: string | null;
+  setActiveProfile(profile: LayoutProfileId): void;
   selectNode(id: string | null): void;
-  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible" | "transform">> & { text?: string }): void;
+  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
+  updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   addNode(type: "container" | "image" | "text"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
@@ -59,7 +63,9 @@ const initialDocument = loadInitialDocument();
 export const useEditorStore = create<EditorState>((set) => ({
   document: initialDocument,
   sceneId: initialDocument.scenes[0]?.id ?? firstScene.id,
+  activeProfile: "desktop",
   selectedNodeId: null,
+  setActiveProfile: (profile) => set({ activeProfile: profile }),
   selectNode: (id) => set({ selectedNodeId: id }),
   updateNode: (nodeId, patch) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -73,10 +79,29 @@ export const useEditorStore = create<EditorState>((set) => ({
 
     if (patch.name !== undefined) node.name = patch.name;
     if (patch.visible !== undefined) node.visible = patch.visible;
-    if (patch.transform !== undefined) node.transform = patch.transform;
     if (patch.text !== undefined && node.type === "text") node.text = patch.text;
 
     return commitCandidate(state, candidate, "Node update was rejected because it makes the project document invalid.");
+  }),
+  updateNodeProfileTransform: (nodeId, patch) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    const node = scene?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+
+    if (node === undefined) {
+      console.warn(`Cannot update node transform '${nodeId}': it does not exist in the selected scene.`);
+      return state;
+    }
+
+    if (state.activeProfile === "desktop") {
+      node.transform = { ...node.transform, ...patch };
+    } else {
+      node.layoutOverrides ??= {};
+      node.layoutOverrides.mobile ??= {};
+      node.layoutOverrides.mobile.transform = { ...node.layoutOverrides.mobile.transform, ...patch };
+    }
+
+    return commitCandidate(state, candidate, "Node transform update was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);

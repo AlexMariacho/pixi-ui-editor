@@ -57,4 +57,8 @@ pnpm test
 
 ## Отчёт исполнителя
 
+Выполнено: добавлена операция `updateNodeProfileTransform(nodeId, patch)`. В horizontal patch мержится в базовый `node.transform`; в vertical — в частичный `node.layoutOverrides.mobile.transform`. Inspector показывает resolved transform через `resolveProfileTransform`, а Inspector и drag используют только новую операцию для всех правок transform.
+
+Unit-тест подтверждает, что для node без исходного override вызов в vertical создаёт ровно `{ "x": 10 }` в `layoutOverrides.mobile.transform` и не меняет базовый transform; последующий horizontal вызов меняет только base transform. `pnpm build`, `pnpm typecheck`, `pnpm test` завершились успешно. Ручная визуальная проверка заблокирована той же несовместимой версией Node.js 20.11.0; нужен Node.js 20.19+ или 22.12+.
+
 Опишите сигнатуру и merge-поведение операции, что изменилось в Inspector и drag, содержимое `layoutOverrides.mobile` после шага 2 (вставьте фрагмент JSON из localStorage), результаты визуальной проверки и команд.

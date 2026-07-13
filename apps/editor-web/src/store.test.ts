@@ -4,11 +4,13 @@ import { useEditorStore } from "./store.js";
 
 const initialDocument = structuredClone(useEditorStore.getState().document);
 const imageNodeId = "10000000-0000-4000-8000-000000000004";
+const textNodeId = "10000000-0000-4000-8000-000000000006";
 
 afterEach(() => {
   useEditorStore.setState({
     document: structuredClone(initialDocument),
     sceneId: initialDocument.scenes[0]!.id,
+    activeProfile: "desktop",
     selectedNodeId: null,
   });
 });
@@ -62,7 +64,8 @@ describe("deleteNode", () => {
 describe("updateNode", () => {
   it("updates valid fields and rejects a patch that invalidates the document", () => {
     const store = useEditorStore.getState();
-    store.updateNode(imageNodeId, { name: "Updated logo", transform: { ...store.document.scenes[0]!.nodes[1]!.transform, x: 42 } });
+    store.updateNode(imageNodeId, { name: "Updated logo" });
+    store.updateNodeProfileTransform(imageNodeId, { x: 42 });
 
     const updated = useEditorStore.getState().document.scenes[0]!.nodes[1]!;
     expect(updated.name).toBe("Updated logo");
@@ -70,10 +73,28 @@ describe("updateNode", () => {
 
     const documentBeforeInvalidPatch: ProjectDocument = structuredClone(useEditorStore.getState().document);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useEditorStore.getState().updateNode(imageNodeId, { transform: { ...updated.transform, width: 0 } });
+    useEditorStore.getState().updateNodeProfileTransform(imageNodeId, { width: 0 });
 
     expect(useEditorStore.getState().document).toEqual(documentBeforeInvalidPatch);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe("updateNodeProfileTransform", () => {
+  it("writes a partial mobile override without changing the base transform, then writes to the base in desktop", () => {
+    const baseX = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!.transform.x;
+
+    useEditorStore.setState({ activeProfile: "mobile" });
+    useEditorStore.getState().updateNodeProfileTransform(textNodeId, { x: 10 });
+
+    const mobileNode = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!;
+    expect(mobileNode.transform.x).toBe(baseX);
+    expect(mobileNode.layoutOverrides?.mobile?.transform).toEqual({ x: 10 });
+
+    useEditorStore.setState({ activeProfile: "desktop" });
+    useEditorStore.getState().updateNodeProfileTransform(textNodeId, { x: 20 });
+
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!.transform.x).toBe(20);
   });
 });
