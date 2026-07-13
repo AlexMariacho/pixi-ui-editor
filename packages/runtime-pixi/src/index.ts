@@ -82,7 +82,10 @@ export function buildSceneView(
 
     const view = createNodeView(node);
     const { transform, visible } = resolveProfileTransform(node, profile);
-    view.position.set(transform.x, transform.y);
+    const pivotX = (transform.pivotX ?? 0) * transform.width;
+    const pivotY = (transform.pivotY ?? 0) * transform.height;
+    view.pivot.set(pivotX, pivotY);
+    view.position.set(transform.x + pivotX, transform.y + pivotY);
     view.scale.set(transform.scaleX, transform.scaleY);
     view.rotation = transform.rotation;
     view.visible = visible;

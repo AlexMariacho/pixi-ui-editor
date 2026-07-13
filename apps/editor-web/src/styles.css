@@ -180,6 +180,33 @@ body { margin: 0; }
 
 .inspector-id { color: var(--text-muted) !important; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 54px;
+  height: 54px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.anchor-grid-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.anchor-grid-dot { width: 5px; height: 5px; background: var(--text-muted); border-radius: 50%; }
+
+.anchor-grid-cell:hover .anchor-grid-dot { background: var(--text-bright); }
+
+.anchor-grid-cell-active .anchor-grid-dot { width: 8px; height: 8px; background: var(--accent); }
+
 /* Canvas */
 
 .canvas-panel { position: relative; min-width: 0; min-height: 0; background: #181818; }
