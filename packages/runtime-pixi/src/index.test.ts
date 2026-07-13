@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { serializeProjectDocument } from "@pixi-ui-editor/schema";
-import { parseProjectDocumentJson, ProjectDocumentJsonParseError } from "./index.js";
+import { parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -15,6 +15,23 @@ const ids = {
 const clone = <T>(value: T): T => structuredClone(value);
 
 describe("sample project loader smoke test", () => {
+  it("resolves base transforms, partial desktop overrides, and profile visibility", () => {
+    const document = parseProjectDocumentJson(sampleJson);
+    const node = document.scenes[0]!.nodes[1]!;
+
+    expect(resolveProfileTransform(node, "desktop")).toEqual({ transform: node.transform, visible: true });
+
+    const withDesktopOverride = clone(node);
+    withDesktopOverride.layoutOverrides = { desktop: { transform: { x: 12, scaleY: 2 } } };
+    expect(resolveProfileTransform(withDesktopOverride, "desktop")).toEqual({
+      transform: { ...node.transform, x: 12, scaleY: 2 },
+      visible: true,
+    });
+
+    withDesktopOverride.layoutOverrides.desktop!.visible = false;
+    expect(resolveProfileTransform(withDesktopOverride, "desktop").visible).toBe(false);
+  });
+
   it("loads the repository fixture through migration and validation", () => {
     const document = parseProjectDocumentJson(sampleJson);
     const scene = document.scenes[0]!;
