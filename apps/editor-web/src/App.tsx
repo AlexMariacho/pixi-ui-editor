@@ -3,6 +3,7 @@ import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
 import type { ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Rectangle } from "pixi.js";
 import { useEditorStore } from "./store.js";
+import { Inspector } from "./Inspector.js";
 
 function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scenes"][number]; selectedNodeId: string | null }) {
   const selectNode = useEditorStore((state) => state.selectNode);
@@ -143,7 +144,7 @@ export function App() {
       <header className="toolbar"><strong>Pixi UI Editor</strong><span>{document.project.name}</span></header>
       <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /></aside>
       <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} selectedNodeId={selectedNodeId} /></section>
-      <aside className="panel inspector-panel"><h1>Inspector</h1><p>Select a node</p></aside>
+      <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={scene.nodes.find((node) => node.id === selectedNodeId)} /></aside>
     </main>
   );
 }
