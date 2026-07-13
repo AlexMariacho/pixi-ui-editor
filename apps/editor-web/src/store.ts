@@ -19,6 +19,7 @@ export type EditorState = {
   selectedNodeId: string | null;
   setActiveProfile(profile: LayoutProfileId): void;
   selectNode(id: string | null): void;
+  updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
@@ -68,6 +69,18 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedNodeId: null,
   setActiveProfile: (profile) => set({ activeProfile: profile }),
   selectNode: (id) => set({ selectedNodeId: id }),
+  updateReferenceViewport: (profile, viewport) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+
+    if (scene === undefined) {
+      console.warn(`Cannot update reference viewport: scene '${state.sceneId}' does not exist.`);
+      return state;
+    }
+
+    scene.layout.referenceViewports[profile] = { ...viewport };
+    return commitCandidate(state, candidate, "Reference viewport update was rejected because it makes the project document invalid.");
+  }),
   updateNode: (nodeId, patch) => set((state) => {
     const candidate = structuredClone(state.document);
     const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);

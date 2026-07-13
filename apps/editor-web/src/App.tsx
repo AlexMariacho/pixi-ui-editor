@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
@@ -11,6 +11,41 @@ const ARTBOARD_BORDER = 0x3c3c50;
 const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
+
+const SCREEN_PRESETS = {
+  desktop: { label: "Desktop", width: 1920, height: 1080 },
+  tablet: { label: "Tablet", width: 1280, height: 800 },
+  mobile: { label: "Mobile", width: 844, height: 390 },
+} as const;
+
+type ScreenPresetId = keyof typeof SCREEN_PRESETS;
+
+function getScreenPresetId(viewport: { width: number; height: number }, profile: LayoutProfileId): ScreenPresetId | "custom" {
+  return (Object.keys(SCREEN_PRESETS) as ScreenPresetId[]).find((presetId) => {
+    const preset = SCREEN_PRESETS[presetId];
+    const width = profile === "desktop" ? preset.width : preset.height;
+    const height = profile === "desktop" ? preset.height : preset.width;
+    return viewport.width === width && viewport.height === height;
+  }) ?? "custom";
+}
+
+function ScreenNumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const [text, setText] = useState(() => String(value));
+
+  useEffect(() => {
+    setText((current) => (Number(current) === value ? current : String(value)));
+  }, [value]);
+
+  const applyValue = (event: ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value;
+    setText(raw);
+    const parsed = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(parsed)) return;
+    onChange(parsed);
+  };
+
+  return <label className="toolbar-screen-number"><span>{label}</span><input type="number" value={text} step={1} onChange={applyValue} /></label>;
+}
 
 function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scenes"][number]; selectedNodeId: string | null }) {
   const selectNode = useEditorStore((state) => state.selectNode);
@@ -237,6 +272,7 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId }: { doc
     const profileChanged = renderedProfileRef.current !== activeProfile;
     renderedProfileRef.current = activeProfile;
     const viewport = scene.layout.referenceViewports[activeProfile];
+    const viewportChanged = viewportRef.current?.width !== viewport.width || viewportRef.current?.height !== viewport.height;
     viewportRef.current = { width: viewport.width, height: viewport.height };
     artboardRef.current?.clear().rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
@@ -256,7 +292,7 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId }: { doc
     nodeViewsRef.current = nodeViews;
     world.addChild(root);
 
-    if (!cameraFittedRef.current || profileChanged) {
+    if (!cameraFittedRef.current || profileChanged || viewportChanged) {
       cameraFittedRef.current = true;
       fitCameraRef.current?.();
     }
@@ -293,12 +329,25 @@ export function App() {
   const addNode = useEditorStore((state) => state.addNode);
   const deleteNode = useEditorStore((state) => state.deleteNode);
   const resetToSample = useEditorStore((state) => state.resetToSample);
+  const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
 
   if (scene === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
 
   const selectedNode = scene.nodes.find((node) => node.id === selectedNodeId);
   const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && scene.rootNodeIds.length === 1);
+  const viewport = scene.layout.referenceViewports[activeProfile];
+  const screenPreset = getScreenPresetId(viewport, activeProfile);
+  const updateViewportDimension = (dimension: "width" | "height", value: number) => {
+    updateReferenceViewport(activeProfile, { ...viewport, [dimension]: value });
+  };
+  const applyScreenPreset = (event: ChangeEvent<HTMLSelectElement>) => {
+    const preset = SCREEN_PRESETS[event.target.value as ScreenPresetId];
+    if (preset === undefined) return;
+    updateReferenceViewport(activeProfile, activeProfile === "desktop"
+      ? { width: preset.width, height: preset.height }
+      : { width: preset.height, height: preset.width });
+  };
 
   return (
     <main className="editor-shell">
@@ -310,6 +359,15 @@ export function App() {
           <button type="button" onClick={() => addNode("text")}>+ Text</button>
           <button type="button" className="toolbar-danger" disabled={deleteDisabled} onClick={() => selectedNodeId !== null && deleteNode(selectedNodeId)}>Delete</button>
           <button type="button" onClick={() => setActiveProfile(activeProfile === "desktop" ? "mobile" : "desktop")}>⟳ {activeProfile === "desktop" ? "Horizontal" : "Vertical"}</button>
+          <div className="toolbar-screen" aria-label="Screen">
+            <span>Screen</span>
+            <select aria-label="Screen preset" value={screenPreset} onChange={applyScreenPreset}>
+              {(Object.keys(SCREEN_PRESETS) as ScreenPresetId[]).map((presetId) => <option key={presetId} value={presetId}>{SCREEN_PRESETS[presetId].label}</option>)}
+              <option value="custom" disabled>Custom</option>
+            </select>
+            <ScreenNumberField label="W" value={viewport.width} onChange={(value) => updateViewportDimension("width", value)} />
+            <ScreenNumberField label="H" value={viewport.height} onChange={(value) => updateViewportDimension("height", value)} />
+          </div>
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>

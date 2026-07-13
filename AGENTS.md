@@ -16,7 +16,7 @@ Pixi UI Editor — web-first редактор для сборки игровог
 
 - **Итерация 01 (Этап 0, технический foundation) завершена**: monorepo, schema v0 (`packages/schema`), headless loader (`packages/runtime-pixi`), эталонный документ `examples/sample-project/project.json`, ADR 0001.
 - **Итерация 02 завершена**: `apps/editor-web` — работающий визуальный прототип на Vite/React/zustand/PixiJS. Он рендерит sample через shared runtime, поддерживает selection, inspector, drag, добавление/удаление nodes и восстановление документа из `localStorage`; архитектура зафиксирована в ADR 0002.
-- **Итерация 03 в работе**: завершены TASK-010, TASK-011 и TASK-012 — editor-web переключает Horizontal/Vertical preview через transient `activeProfile`, transform редактируется независимо: horizontal пишет базовый transform, vertical — частичный `layoutOverrides.mobile.transform`; inspector поддерживает visibility override для обеих ориентаций.
+- **Итерация 03 завершена**: editor-web переключает Horizontal/Vertical preview через transient `activeProfile`, transform и visibility редактируются независимо для обоих layout-профилей, а раздел Screen в toolbar сохраняет editable reference viewport активной ориентации с Desktop/Tablet/Mobile presets; решения зафиксированы в ADR 0003.
 - Остальные `apps/*` и пакеты, кроме `packages/schema` и `packages/runtime-pixi`, остаются запланированными заглушками.
 - **CI намеренно отсутствует** (решение владельца проекта от июля 2026): GitHub Actions вернём после того, как появится работающее приложение. Не добавляйте workflow без явного запроса.
 - PixiJS и React подключены только в `apps/editor-web`; серверный framework ещё не выбран.

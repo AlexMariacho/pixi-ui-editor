@@ -53,6 +53,35 @@ body { margin: 0; }
 
 .toolbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
+.toolbar-screen {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+.toolbar-screen > span { color: var(--text-muted); font-size: 12px; }
+
+.toolbar-screen select,
+.toolbar-screen-number input {
+  min-width: 0;
+  padding: 3px 5px;
+  color: var(--text-bright);
+  font: inherit;
+  font-size: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.toolbar-screen select:focus,
+.toolbar-screen-number input:focus { border-color: var(--accent); outline: none; }
+
+.toolbar-screen-number { display: flex; align-items: center; gap: 3px; color: var(--text-muted); font-size: 12px; }
+
+.toolbar-screen-number input { width: 58px; }
+
 .toolbar-actions button,
 .canvas-hud button {
   padding: 4px 10px;

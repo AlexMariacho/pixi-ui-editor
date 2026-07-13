@@ -81,6 +81,21 @@ describe("updateNode", () => {
   });
 });
 
+describe("updateReferenceViewport", () => {
+  it("updates a valid mobile viewport and rejects an invalid one without changing the store", () => {
+    useEditorStore.getState().updateReferenceViewport("mobile", { width: 500, height: 900 });
+    expect(useEditorStore.getState().document.scenes[0]!.layout.referenceViewports.mobile).toEqual({ width: 500, height: 900 });
+
+    const beforeInvalidUpdate = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useEditorStore.getState().updateReferenceViewport("mobile", { width: 0, height: 900 });
+
+    expect(useEditorStore.getState().document).toEqual(beforeInvalidUpdate);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe("updateNodeProfileTransform", () => {
   it("writes a partial mobile override without changing the base transform, then writes to the base in desktop", () => {
     const baseX = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!.transform.x;
