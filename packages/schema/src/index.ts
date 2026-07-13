@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { createRequire } from "node:module";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
 export const CURRENT_SCHEMA_VERSION = 0 as const;
@@ -30,10 +31,9 @@ export type ProjectDocument = Static<typeof ProjectDocumentSchema>;
 export type ValidationIssue = { code: string; path: string; message: string; severity: "error" | "warning" };
 export type ValidationResult = { valid: boolean; issues: ValidationIssue[] };
 export class ProjectDocumentMigrationError extends Error { readonly code = "UNSUPPORTED_SCHEMA_VERSION"; constructor(message: string) { super(message); this.name = "ProjectDocumentMigrationError"; } }
-const require = createRequire(import.meta.url);
-const Ajv = require("ajv") as typeof import("ajv").default;
-const addFormats = require("ajv-formats") as typeof import("ajv-formats").default;
-const ajv = new Ajv({ allErrors: true, strict: false }); addFormats(ajv); const structural = ajv.compile(ProjectDocumentSchema);
+const AjvConstructor = Ajv as unknown as typeof import("ajv").default;
+const addAjvFormats = addFormats as unknown as typeof import("ajv-formats").default;
+const ajv = new AjvConstructor({ allErrors: true, strict: false }); addAjvFormats(ajv); const structural = ajv.compile(ProjectDocumentSchema);
 export function createStableId(): string { return crypto.randomUUID(); }
 const add = (issues: ValidationIssue[], code: string, path: string, message: string) => issues.push({ code, path, message, severity: "error" });
 
