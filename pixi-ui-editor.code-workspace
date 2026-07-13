@@ -13,7 +13,13 @@
       "pnpm-lock.yaml": true
     },
     "files.exclude": {
-      "**/*.tsbuildinfo": true
+      "**/*.tsbuildinfo": true,
+      "**/.agents": true,
+      "**/.claude": true,
+      "**/.codex": true,
+      "**/.obsidian": true,
+      "**/.vscode": true,
+      "**/node_modules": true
     }
   }
 }
