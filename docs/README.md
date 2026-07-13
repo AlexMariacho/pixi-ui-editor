@@ -7,3 +7,4 @@
 - [Ревью zStudio](zstudio-review-for-game-ui-platform.md)
 - [Итерация 01 — технический foundation](tasks/iteration-01-foundation/README.md)
 - [Итерация 02 — завершённый визуальный прототип редактора](tasks/iteration-02-editor-prototype/README.md)
+- [Итерация 03 — ориентация экрана и размеры viewport](tasks/iteration-03-orientation-and-viewports/README.md)
