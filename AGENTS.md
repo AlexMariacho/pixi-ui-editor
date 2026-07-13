@@ -18,7 +18,7 @@ Pixi UI Editor — web-first редактор для сборки игровог
 - Реальный код есть только в `packages/schema` и `packages/runtime-pixi`. Остальные пакеты и все `apps/*` — заглушки в одну строку; это соответствует плану, не «недоделка».
 - **CI намеренно отсутствует** (решение владельца проекта от июля 2026): GitHub Actions вернём после того, как появится работающее приложение. Не добавляйте workflow без явного запроса.
 - PixiJS, React и серверный framework ещё не подключены. Их появление — предмет следующих итераций и, для архитектурно значимых выборов, отдельных ADR.
-- Следующий фронт работ по плану MVP: PixiJS runtime rendering (node factory, разделы 8.2 плана) и editor shell (8.3).
+- **Итерация 02 спроектирована, но не начата**: визуальный прототип редактора (rendering sample project, selection, inspector, drag, add/delete nodes, localStorage). Задачи TASK-004…TASK-009 в [`docs/tasks/iteration-02-editor-prototype/`](docs/tasks/iteration-02-editor-prototype/README.md); каждая задача обязана заканчиваться визуально проверяемым результатом в браузере.
 
 ## Рабочий процесс разработки
 
