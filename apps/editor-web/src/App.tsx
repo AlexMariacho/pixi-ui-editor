@@ -50,7 +50,6 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
   const fitCameraRef = useRef<(() => void) | null>(null);
   const dragRef = useRef<{
     nodeId: string;
-    parentView: Container;
     offsetX: number;
     offsetY: number;
   } | null>(null);
@@ -181,7 +180,12 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
         const drag = dragRef.current;
         if (drag === null) return;
 
-        const localPosition = drag.parentView.toLocal(event.global);
+        // Сцена пересобирается при каждом изменении документа, поэтому view ищем заново.
+        const nodeView = nodeViewsRef.current.get(drag.nodeId);
+        const parentView = nodeView?.parent;
+        if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
+
+        const localPosition = parentView.toLocal(event.global);
         const node = useEditorStore.getState().document.scenes
           .find((candidate) => candidate.id === sceneId)?.nodes.find((candidate) => candidate.id === drag.nodeId);
         if (node === undefined) return;
@@ -201,7 +205,6 @@ function SceneCanvas({ document, sceneId, selectedNodeId }: { document: ProjectD
         const localPosition = parentView.toLocal(event.global);
         dragRef.current = {
           nodeId,
-          parentView,
           offsetX: localPosition.x - nodeView.position.x,
           offsetY: localPosition.y - nodeView.position.y,
         };
