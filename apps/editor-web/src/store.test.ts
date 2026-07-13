@@ -98,3 +98,19 @@ describe("updateNodeProfileTransform", () => {
     expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!.transform.x).toBe(20);
   });
 });
+
+describe("setNodeOrientationVisibility", () => {
+  it("writes false to a mobile override and removes the visible key and empty overrides when re-enabled", () => {
+    useEditorStore.getState().setNodeOrientationVisibility(textNodeId, "mobile", false);
+
+    let node = useEditorStore.getState().document.scenes[0]!.nodes.find((candidate) => candidate.id === textNodeId)!;
+    expect(node.layoutOverrides?.mobile?.visible).toBe(false);
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+
+    useEditorStore.getState().setNodeOrientationVisibility(textNodeId, "mobile", true);
+
+    node = useEditorStore.getState().document.scenes[0]!.nodes.find((candidate) => candidate.id === textNodeId)!;
+    expect(node.layoutOverrides).toBeUndefined();
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+});

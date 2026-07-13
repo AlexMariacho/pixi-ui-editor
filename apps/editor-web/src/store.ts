@@ -21,6 +21,7 @@ export type EditorState = {
   selectNode(id: string | null): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
+  setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addNode(type: "container" | "image" | "text"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
@@ -102,6 +103,28 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     return commitCandidate(state, candidate, "Node transform update was rejected because it makes the project document invalid.");
+  }),
+  setNodeOrientationVisibility: (nodeId, profile, visible) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    const node = scene?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+
+    if (node === undefined) {
+      console.warn(`Cannot update node orientation visibility '${nodeId}': it does not exist in the selected scene.`);
+      return state;
+    }
+
+    if (!visible) {
+      node.layoutOverrides ??= {};
+      node.layoutOverrides[profile] ??= {};
+      node.layoutOverrides[profile].visible = false;
+    } else if (node.layoutOverrides?.[profile] !== undefined) {
+      delete node.layoutOverrides[profile].visible;
+      if (Object.keys(node.layoutOverrides[profile]).length === 0) delete node.layoutOverrides[profile];
+      if (Object.keys(node.layoutOverrides).length === 0) delete node.layoutOverrides;
+    }
+
+    return commitCandidate(state, candidate, "Node orientation visibility update was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);

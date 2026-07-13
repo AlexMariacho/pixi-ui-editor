@@ -116,6 +116,7 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
   const updateNode = useEditorStore((state) => state.updateNode);
   const activeProfile = useEditorStore((state) => state.activeProfile);
   const updateNodeProfileTransform = useEditorStore((state) => state.updateNodeProfileTransform);
+  const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
 
   if (selectedNode === undefined) return <p className="inspector-empty">Select a node</p>;
 
@@ -133,6 +134,10 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="Visible"><input type="checkbox" checked={selectedNode.visible} onChange={(event) => updateNode(selectedNode.id, { visible: event.target.checked })} /></InspectorField>
       <InspectorField label="Type"><output>{selectedNode.type}</output></InspectorField>
       <InspectorField label="ID"><output className="inspector-id">{selectedNode.id}</output></InspectorField>
+    </InspectorWindow>
+    <InspectorWindow title="Layout Visibility">
+      <InspectorField label="Horizontal"><input type="checkbox" checked={selectedNode.layoutOverrides?.desktop?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "desktop", event.target.checked)} /></InspectorField>
+      <InspectorField label="Vertical"><input type="checkbox" checked={selectedNode.layoutOverrides?.mobile?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "mobile", event.target.checked)} /></InspectorField>
     </InspectorWindow>
     <InspectorWindow title="Transform">
       <NumberField label="X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
