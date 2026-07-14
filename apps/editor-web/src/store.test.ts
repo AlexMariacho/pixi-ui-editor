@@ -69,6 +69,34 @@ describe("setImageNodeAsset", () => {
   });
 });
 
+describe("asset source replacement and deletion", () => {
+  it("replaces an asset source while preserving its ID", () => {
+    const asset = useEditorStore.getState().document.assets[0]!;
+
+    useEditorStore.getState().replaceAssetSource(asset.id, { uri: "data:image/png;base64,BBBB", mediaType: "image/png" });
+
+    expect(useEditorStore.getState().document.assets[0]).toMatchObject({
+      id: asset.id,
+      source: { uri: "data:image/png;base64,BBBB", mediaType: "image/png", version: expect.any(String) },
+    });
+  });
+
+  it("rejects deleting an asset in use, then deletes it after its last referencing node is removed", () => {
+    const assetId = useEditorStore.getState().document.assets[0]!.id;
+    const beforeDeletion = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    useEditorStore.getState().deleteAsset(assetId);
+    expect(useEditorStore.getState().document).toEqual(beforeDeletion);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+
+    useEditorStore.getState().deleteNode(imageNodeId);
+    useEditorStore.getState().deleteAsset(assetId);
+    expect(useEditorStore.getState().document.assets.some((asset) => asset.id === assetId)).toBe(false);
+  });
+});
+
 describe("deleteNode", () => {
   it("deletes an entire subtree from both nodes and parent children", () => {
     const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;

@@ -25,6 +25,8 @@ export type EditorState = {
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   setImageNodeAsset(nodeId: string, assetId: string): void;
+  replaceAssetSource(assetId: string, source: { uri: string; mediaType: string }): void;
+  deleteAsset(assetId: string): void;
   addNode(type: "container" | "image" | "text"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
@@ -163,6 +165,24 @@ export const useEditorStore = create<EditorState>((set) => ({
 
     node.assetId = assetId;
     return commitCandidate(state, candidate, "Image asset selection was rejected because it makes the project document invalid.");
+  }),
+  replaceAssetSource: (assetId, source) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
+
+    if (asset === undefined) {
+      console.warn(`Cannot replace source for asset '${assetId}': it does not exist.`);
+      return state;
+    }
+
+    asset.source = { ...source, version: new Date().toISOString() };
+    return commitCandidate(state, candidate, "Asset source replacement was rejected because it makes the project document invalid.");
+  }),
+  deleteAsset: (assetId) => set((state) => {
+    const candidate = structuredClone(state.document);
+    candidate.assets = candidate.assets.filter((asset) => asset.id !== assetId);
+
+    return commitCandidate(state, candidate, "Asset deletion was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);
