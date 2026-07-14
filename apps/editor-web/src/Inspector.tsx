@@ -114,12 +114,15 @@ function PivotField({ pivotX, pivotY, onChange }: { pivotX: number; pivotY: numb
 
 export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }) {
   const updateNode = useEditorStore((state) => state.updateNode);
+  const assets = useEditorStore((state) => state.document.assets);
   const activeProfile = useEditorStore((state) => state.activeProfile);
   const updateNodeProfileTransform = useEditorStore((state) => state.updateNodeProfileTransform);
   const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
+  const setImageNodeAsset = useEditorStore((state) => state.setImageNodeAsset);
 
   if (selectedNode === undefined) return <p className="inspector-empty">Select a node</p>;
 
+  const imageAssets = assets.filter((asset) => asset.type === "image");
   const resolvedTransform = resolveProfileTransform(selectedNode, activeProfile).transform;
   const updateTransform = (patch: Partial<UINode["transform"]>) => {
     updateNodeProfileTransform(selectedNode.id, patch);
@@ -135,6 +138,13 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="Type"><output>{selectedNode.type}</output></InspectorField>
       <InspectorField label="ID"><output className="inspector-id">{selectedNode.id}</output></InspectorField>
     </InspectorWindow>
+    {selectedNode.type === "image" && <InspectorWindow title="Image">
+      <InspectorField label="Asset">
+        <select value={selectedNode.assetId} onChange={(event) => setImageNodeAsset(selectedNode.id, event.target.value)}>
+          {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+        </select>
+      </InspectorField>
+    </InspectorWindow>}
     <InspectorWindow title="Layout Visibility">
       <InspectorField label="Horizontal"><input type="checkbox" checked={selectedNode.layoutOverrides?.desktop?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "desktop", event.target.checked)} /></InspectorField>
       <InspectorField label="Vertical"><input type="checkbox" checked={selectedNode.layoutOverrides?.mobile?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "mobile", event.target.checked)} /></InspectorField>

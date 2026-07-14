@@ -24,6 +24,7 @@ export type EditorState = {
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
+  setImageNodeAsset(nodeId: string, assetId: string): void;
   addNode(type: "container" | "image" | "text"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
@@ -145,6 +146,23 @@ export const useEditorStore = create<EditorState>((set) => ({
     candidate.assets.push({ id: createStableId(), name, type: "image", source: { ...source } });
 
     return commitCandidate(state, candidate, "Image asset creation was rejected because it makes the project document invalid.");
+  }),
+  setImageNodeAsset: (nodeId, assetId) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    const node = scene?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+
+    if (node === undefined) {
+      console.warn(`Cannot set image asset for node '${nodeId}': it does not exist in the selected scene.`);
+      return state;
+    }
+    if (node.type !== "image") {
+      console.warn(`Cannot set image asset for node '${nodeId}': it is not an image node.`);
+      return state;
+    }
+
+    node.assetId = assetId;
+    return commitCandidate(state, candidate, "Image asset selection was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);

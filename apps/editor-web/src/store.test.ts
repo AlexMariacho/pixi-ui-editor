@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
+import { createStableId, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./store.js";
 
 const initialDocument = structuredClone(useEditorStore.getState().document);
@@ -46,6 +46,24 @@ describe("addImageAsset", () => {
     useEditorStore.getState().addImageAsset("Invalid", { uri: "", mediaType: "image/png" });
 
     expect(useEditorStore.getState().document).toEqual(beforeInvalidAsset);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("setImageNodeAsset", () => {
+  it("changes Logo to an existing image asset and rejects a missing asset", () => {
+    useEditorStore.getState().addImageAsset("Uploaded", { uri: "data:image/png;base64,AAAA", mediaType: "image/png" });
+    const uploadedAssetId = useEditorStore.getState().document.assets.at(-1)!.id;
+
+    useEditorStore.getState().setImageNodeAsset(imageNodeId, uploadedAssetId);
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)).toMatchObject({ assetId: uploadedAssetId });
+
+    const beforeMissingAsset = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useEditorStore.getState().setImageNodeAsset(imageNodeId, createStableId());
+
+    expect(useEditorStore.getState().document).toEqual(beforeMissingAsset);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
