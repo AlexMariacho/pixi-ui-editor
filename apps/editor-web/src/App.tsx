@@ -4,6 +4,7 @@ import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/s
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore } from "./store.js";
 import { Inspector } from "./Inspector.js";
+import { loadEditorSceneTextures } from "./assets.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -421,33 +422,35 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
     viewportRef.current = { width: viewport.width, height: viewport.height };
     artboardRef.current?.clear().rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
-    const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile);
-    for (const [nodeId, nodeView] of nodeViews) {
-      nodeView.eventMode = "static";
-      nodeView.on("pointerdown", (event) => {
-        if (event.button !== 0) return;
-        event.stopPropagation();
-        useEditorStore.getState().selectNode(nodeId);
-        startDragRef.current?.(nodeId, nodeView, event);
-      });
-    }
+    let cancelled = false;
 
-    sceneRootRef.current?.destroy({ children: true });
-    sceneRootRef.current = root;
-    nodeViewsRef.current = nodeViews;
-    world.addChild(root);
+    void loadEditorSceneTextures(document, sceneId).then((textures) => {
+      if (cancelled) return;
 
-    if (!cameraFittedRef.current || profileChanged || viewportChanged) {
-      cameraFittedRef.current = true;
-      fitCameraRef.current?.();
-    }
+      const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile, textures);
+      for (const [nodeId, nodeView] of nodeViews) {
+        nodeView.eventMode = "static";
+        nodeView.on("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          event.stopPropagation();
+          useEditorStore.getState().selectNode(nodeId);
+          startDragRef.current?.(nodeId, nodeView, event);
+        });
+      }
+
+      sceneRootRef.current?.destroy({ children: true });
+      sceneRootRef.current = root;
+      nodeViewsRef.current = nodeViews;
+      world.addChild(root);
+
+      if (!cameraFittedRef.current || profileChanged || viewportChanged) {
+        cameraFittedRef.current = true;
+        fitCameraRef.current?.();
+      }
+    });
 
     return () => {
-      root.destroy({ children: true });
-      if (sceneRootRef.current === root) {
-        sceneRootRef.current = null;
-        nodeViewsRef.current = new Map();
-      }
+      cancelled = true;
     };
   }, [activeProfile, application, document, sceneId]);
 

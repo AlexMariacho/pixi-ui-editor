@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { serializeProjectDocument } from "@pixi-ui-editor/schema";
-import { parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
+import { Sprite, Texture } from "pixi.js";
+import { buildSceneView, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -30,6 +31,17 @@ describe("sample project loader smoke test", () => {
 
     withDesktopOverride.layoutOverrides.desktop!.visible = false;
     expect(resolveProfileTransform(withDesktopOverride, "desktop").visible).toBe(false);
+  });
+
+  it("uses supplied textures for image nodes and otherwise preserves the placeholder", () => {
+    const document = parseProjectDocumentJson(sampleJson);
+    const textured = buildSceneView(document, ids.scene, "desktop", new Map([[ids.asset, Texture.WHITE]]));
+    const sprite = textured.nodeViews.get(ids.image);
+    expect(sprite).toBeInstanceOf(Sprite);
+    expect(sprite?.width).toBe(320);
+
+    const placeholder = buildSceneView(document, ids.scene, "desktop").nodeViews.get(ids.image);
+    expect(placeholder).not.toBeInstanceOf(Sprite);
   });
 
   it("loads the repository fixture through migration and validation", () => {
