@@ -6,6 +6,7 @@ import {
   type LayoutProfileId,
   type AssetFile,
   type ProjectDocument,
+  type Scene,
   type UINode,
 } from "@pixi-ui-editor/schema";
 import { create } from "zustand";
@@ -14,19 +15,26 @@ import { getCachedImageAssetSize } from "./assets.js";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
+export type ViewMode = "single" | "map";
 
 export type EditorState = {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
+  viewMode: ViewMode;
   selectedNodeId: string | null;
   spineFrameRequests: Record<string, number>;
   spinePlaybackFrames: Record<string, { current: number; total: number }>;
   spineAutoplay: Record<string, boolean>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
+  setViewMode(mode: ViewMode): void;
   selectNode(id: string | null): void;
+  selectScene(sceneId: string): void;
+  addScene(name?: string): void;
+  renameScene(sceneId: string, name: string): void;
+  deleteScene(sceneId: string): void;
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
@@ -87,13 +95,82 @@ export const useEditorStore = create<EditorState>((set) => ({
   sceneId: initialDocument.scenes[0]?.id ?? firstScene.id,
   activeProfile: "desktop",
   activeTool: "select",
+  viewMode: "single",
   selectedNodeId: null,
   spineFrameRequests: {},
   spinePlaybackFrames: {},
   spineAutoplay: {},
   setActiveProfile: (profile) => set({ activeProfile: profile }),
   setActiveTool: (tool) => set({ activeTool: tool }),
+  setViewMode: (mode) => set((state) => {
+    if (mode === state.viewMode) return state;
+    return mode === "map" ? { viewMode: mode, selectedNodeId: null, activeTool: "pan" } : { viewMode: mode };
+  }),
   selectNode: (id) => set({ selectedNodeId: id }),
+  selectScene: (sceneId) => set((state) => {
+    if (!state.document.scenes.some((scene) => scene.id === sceneId)) {
+      console.warn(`Cannot select scene '${sceneId}': it does not exist.`);
+      return state;
+    }
+    return { sceneId, selectedNodeId: null };
+  }),
+  addScene: (name) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const activeScene = candidate.scenes.find((scene) => scene.id === state.sceneId) ?? candidate.scenes[0];
+    if (activeScene === undefined) {
+      console.warn("Cannot add a window: the project document does not contain a scene to copy viewports from.");
+      return state;
+    }
+
+    const trimmedName = name?.trim() ?? "";
+    const scene: Scene = {
+      id: createStableId(),
+      name: trimmedName !== "" ? trimmedName : `Window ${candidate.scenes.length + 1}`,
+      rootNodeIds: [],
+      nodes: [],
+      layout: { referenceViewports: structuredClone(activeScene.layout.referenceViewports) },
+    };
+    candidate.scenes.push(scene);
+
+    const committed = commitCandidate(state, candidate, "Window creation was rejected because it makes the project document invalid.");
+    return committed === state ? state : { ...committed, sceneId: scene.id, selectedNodeId: null };
+  }),
+  renameScene: (sceneId, name) => set((state) => {
+    const trimmedName = name.trim();
+    if (trimmedName === "") {
+      console.warn(`Cannot rename window '${sceneId}': the name must not be empty.`);
+      return state;
+    }
+
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === sceneId);
+    if (scene === undefined) {
+      console.warn(`Cannot rename window '${sceneId}': it does not exist.`);
+      return state;
+    }
+
+    scene.name = trimmedName;
+    return commitCandidate(state, candidate, "Window rename was rejected because it makes the project document invalid.");
+  }),
+  deleteScene: (sceneId) => set((state) => {
+    if (state.document.scenes.length <= 1) {
+      console.warn("Cannot delete the last window of the project.");
+      return state;
+    }
+
+    const candidate = structuredClone(state.document);
+    const sceneIndex = candidate.scenes.findIndex((scene) => scene.id === sceneId);
+    if (sceneIndex === -1) {
+      console.warn(`Cannot delete window '${sceneId}': it does not exist.`);
+      return state;
+    }
+
+    candidate.scenes.splice(sceneIndex, 1);
+    const committed = commitCandidate(state, candidate, "Window deletion was rejected because it makes the project document invalid.");
+    if (committed === state) return state;
+    if (state.sceneId !== sceneId) return committed;
+    return { ...committed, sceneId: candidate.scenes[0]!.id, selectedNodeId: null };
+  }),
   updateReferenceViewport: (profile, viewport) => set((state) => {
     const candidate = structuredClone(state.document);
     const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);

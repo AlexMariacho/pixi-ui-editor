@@ -179,6 +179,31 @@ describe("deleteNode", () => {
   });
 });
 
+describe("scenes", () => {
+  it("addScene creates a valid document with two windows and activates the new one", () => {
+    useEditorStore.getState().addScene();
+
+    const state = useEditorStore.getState();
+    expect(state.document.scenes).toHaveLength(2);
+    const addedScene = state.document.scenes[1]!;
+    expect(addedScene).toMatchObject({ name: "Window 2", rootNodeIds: [], nodes: [] });
+    expect(addedScene.layout.referenceViewports).toEqual(initialDocument.scenes[0]!.layout.referenceViewports);
+    expect(state.sceneId).toBe(addedScene.id);
+    expect(validateProjectDocument(state.document).valid).toBe(true);
+  });
+
+  it("deleteScene rejects deleting the last window", () => {
+    const sceneId = useEditorStore.getState().document.scenes[0]!.id;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    useEditorStore.getState().deleteScene(sceneId);
+
+    expect(useEditorStore.getState().document.scenes).toHaveLength(1);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe("updateNode", () => {
   it("updates valid fields and rejects a patch that invalidates the document", () => {
     const store = useEditorStore.getState();

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
-import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
-import { useEditorStore, type EditorTool } from "./store.js";
+import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
+import { useEditorStore, type EditorTool, type ViewMode } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures } from "./assets.js";
 import { AssetsWindow } from "./AssetPanel.js";
@@ -203,6 +203,70 @@ function ScreenResolutionsMenu({
   );
 }
 
+function WindowsSection({ document, sceneId }: { document: ProjectDocument; sceneId: string }) {
+  const selectScene = useEditorStore((state) => state.selectScene);
+  const addScene = useEditorStore((state) => state.addScene);
+  const renameScene = useEditorStore((state) => state.renameScene);
+  const deleteScene = useEditorStore((state) => state.deleteScene);
+  const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
+
+  const commitRename = () => {
+    if (renamingSceneId !== null && renameText.trim() !== "") renameScene(renamingSceneId, renameText);
+    setRenamingSceneId(null);
+  };
+
+  return (
+    <section className="windows-section">
+      <h2>Windows</h2>
+      <ul className="windows-list">
+        {document.scenes.map((scene) => (
+          <li key={scene.id} className="windows-list-item">
+            {renamingSceneId === scene.id ? (
+              <input
+                className="window-rename-input"
+                autoFocus
+                value={renameText}
+                onChange={(event) => setRenameText(event.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitRename();
+                  if (event.key === "Escape") setRenamingSceneId(null);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className={`window-row${scene.id === sceneId ? " window-row-active" : ""}`}
+                onClick={() => selectScene(scene.id)}
+                onDoubleClick={() => {
+                  setRenamingSceneId(scene.id);
+                  setRenameText(scene.name);
+                }}
+              >
+                {scene.name}
+              </button>
+            )}
+            <button
+              type="button"
+              className="window-delete"
+              aria-label={`Delete window ${scene.name}`}
+              title={`Delete window ${scene.name}`}
+              disabled={document.scenes.length === 1}
+              onClick={() => {
+                if (window.confirm(`Delete window "${scene.name}"?`)) deleteScene(scene.id);
+              }}
+            >
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="window-add" onClick={() => addScene()}>+ Window</button>
+    </section>
+  );
+}
+
 function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scenes"][number]; selectedNodeId: string | null }) {
   const selectNode = useEditorStore((state) => state.selectNode);
   const nodesById = new Map<string, UINode>(scene.nodes.map((node) => [node.id, node]));
@@ -229,11 +293,12 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
   return <ul className="tree">{scene.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNodeId, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeId, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
+  viewMode: ViewMode;
   selectedNodeId: string | null;
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
@@ -254,6 +319,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
   const cameraFittedRef = useRef(false);
   const renderedProfileRef = useRef<LayoutProfileId | null>(null);
+  const renderedViewModeRef = useRef<ViewMode | null>(null);
   const fitCameraRef = useRef<(() => void) | null>(null);
   const dragRef = useRef<{
     nodeId: string;
@@ -575,12 +641,97 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
 
     const profileChanged = renderedProfileRef.current !== activeProfile;
     renderedProfileRef.current = activeProfile;
+    const viewModeChanged = renderedViewModeRef.current !== viewMode;
+    renderedViewModeRef.current = viewMode;
+
+    let cancelled = false;
+
+    if (viewMode === "map") {
+      const gap = scene.layout.referenceViewports[activeProfile].width * 0.1;
+      let offsetX = 0;
+      let maxHeight = 0;
+      const placements = document.scenes.map((mapScene) => {
+        const sceneViewport = mapScene.layout.referenceViewports[activeProfile];
+        const placement = { scene: mapScene, viewport: sceneViewport, x: offsetX };
+        offsetX += sceneViewport.width + gap;
+        maxHeight = Math.max(maxHeight, sceneViewport.height);
+        return placement;
+      });
+      const totalWidth = Math.max(1, offsetX - gap);
+      const viewportChanged = viewportRef.current?.width !== totalWidth || viewportRef.current?.height !== maxHeight;
+      viewportRef.current = { width: totalWidth, height: maxHeight };
+      const artboard = artboardRef.current?.clear();
+      for (const placement of placements) {
+        artboard?.rect(placement.x, 0, placement.viewport.width, placement.viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
+      }
+
+      void Promise.all(placements.map((placement) => Promise.all([
+        loadEditorSceneTextures(document, placement.scene.id),
+        loadEditorSceneSpines(document, placement.scene.id),
+      ]))).then((loadedScenes) => {
+        if (cancelled) return;
+
+        const mapRoot = new Container();
+        placements.forEach((placement, index) => {
+          const [textures, spines] = loadedScenes[index]!;
+          const { root } = buildSceneView(document, placement.scene.id, activeProfile, textures, spines);
+          root.position.x = placement.x;
+          root.eventMode = "none";
+
+          const label = new PixiText({
+            text: placement.scene.name,
+            style: { fill: 0xcccccc, fontSize: Math.max(24, placement.viewport.height * 0.04) },
+          });
+          label.position.set(placement.x, -label.height - 12);
+
+          const hitArea = new Graphics().rect(0, 0, placement.viewport.width, placement.viewport.height).fill({ color: 0xffffff, alpha: 0.001 });
+          hitArea.position.x = placement.x;
+          hitArea.eventMode = "static";
+          hitArea.cursor = "pointer";
+          // Клик (без заметного перемещения — иначе это pan) открывает окно в single-режиме.
+          let pressPosition: { x: number; y: number } | null = null;
+          hitArea.on("pointerdown", (event) => {
+            if (event.button === 0) pressPosition = { x: event.global.x, y: event.global.y };
+          });
+          hitArea.on("pointerup", (event) => {
+            if (pressPosition === null) return;
+            const deltaX = event.global.x - pressPosition.x;
+            const deltaY = event.global.y - pressPosition.y;
+            pressPosition = null;
+            if (deltaX * deltaX + deltaY * deltaY > 25) return;
+            const state = useEditorStore.getState();
+            state.selectScene(placement.scene.id);
+            state.setViewMode("single");
+          });
+
+          mapRoot.addChild(root, label, hitArea);
+        });
+
+        sceneRootRef.current?.destroy({ children: true });
+        sceneRootRef.current = mapRoot;
+        nodeViewsRef.current = new Map();
+        spineDataRef.current = new Map();
+        world.addChild(mapRoot);
+        if (spinePlaybackTickerRef.current !== null) {
+          application.ticker.remove(spinePlaybackTickerRef.current);
+          spinePlaybackTickerRef.current = null;
+        }
+
+        if (!cameraFittedRef.current || profileChanged || viewportChanged || viewModeChanged) {
+          cameraFittedRef.current = true;
+          fitCameraRef.current?.();
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const viewport = scene.layout.referenceViewports[activeProfile];
     const viewportChanged = viewportRef.current?.width !== viewport.width || viewportRef.current?.height !== viewport.height;
     viewportRef.current = { width: viewport.width, height: viewport.height };
     artboardRef.current?.clear().rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
-
-    let cancelled = false;
 
     void Promise.all([loadEditorSceneTextures(document, sceneId), loadEditorSceneSpines(document, sceneId)]).then(([textures, spines]) => {
       if (cancelled) return;
@@ -624,7 +775,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       spinePlaybackTickerRef.current = reportSpinePlayback;
       application.ticker.add(reportSpinePlayback);
 
-      if (!cameraFittedRef.current || profileChanged || viewportChanged) {
+      if (!cameraFittedRef.current || profileChanged || viewportChanged || viewModeChanged) {
         cameraFittedRef.current = true;
         fitCameraRef.current?.();
       }
@@ -633,7 +784,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, application, document, sceneId]);
+  }, [activeProfile, application, document, sceneId, viewMode]);
 
   useEffect(() => {
     if (spineFrameRequest === undefined || selectedNodeId === null) return;
@@ -657,7 +808,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     redrawSelectionRef.current();
   }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId]);
 
-  const isAssetDrag = (event: React.DragEvent<HTMLDivElement>) => Array.from(event.dataTransfer.types).includes("application/x-pixi-ui-editor-asset");
+  const isAssetDrag = (event: React.DragEvent<HTMLDivElement>) => viewMode === "single" && Array.from(event.dataTransfer.types).includes("application/x-pixi-ui-editor-asset");
   const dropAsset = (event: React.DragEvent<HTMLDivElement>) => {
     if (!isAssetDrag(event)) return;
     event.preventDefault();
@@ -675,7 +826,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
 
   return (
     <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={dropAsset}>
-      <ToolPanel activeTool={activeTool} setActiveTool={setActiveTool} />
+      <ToolPanel activeTool={activeTool} viewMode={viewMode} setActiveTool={setActiveTool} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
           type="button"
@@ -687,10 +838,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
           ⟳
         </button>
         <span className="canvas-toolbar-divider" aria-hidden="true" />
-        <button type="button" onClick={() => addNode("container")}>+ Container</button>
-        <button type="button" onClick={() => addNode("image")}>+ Image</button>
-        <button type="button" onClick={() => addNode("text")}>+ Text</button>
-        <button type="button" disabled={!document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("container")}>+ Container</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
+        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
       </div>
       <div className="canvas-hud">
         <button type="button" onClick={() => fitCameraRef.current?.()}>Fit</button>
@@ -700,22 +851,36 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
   );
 }
 
-function ToolPanel({ activeTool, setActiveTool }: { activeTool: EditorTool; setActiveTool: (tool: EditorTool) => void }) {
+function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: EditorTool; viewMode: ViewMode; setActiveTool: (tool: EditorTool) => void }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.altKey || event.metaKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return;
 
+      const state = useEditorStore.getState();
+      const key = event.key.toLowerCase();
+      if (key === "m") {
+        state.setViewMode(state.viewMode === "map" ? "single" : "map");
+        return;
+      }
+      if (event.key === "Escape" && state.viewMode === "map") {
+        state.setViewMode("single");
+        return;
+      }
+
       const toolByKey: Record<string, EditorTool> = { q: "pan", w: "select", e: "resize" };
-      const tool = toolByKey[event.key.toLowerCase()];
-      if (tool !== undefined) setActiveTool(tool);
+      const tool = toolByKey[key];
+      if (tool === undefined) return;
+      if (state.viewMode === "map" && tool !== "pan") return;
+      setActiveTool(tool);
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setActiveTool]);
 
+  const setViewMode = useEditorStore((state) => state.setViewMode);
   const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
     { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: "Q" },
     { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: "W" },
@@ -732,11 +897,22 @@ function ToolPanel({ activeTool, setActiveTool }: { activeTool: EditorTool; setA
           title={`${label} (${shortcut})`}
           aria-label={`${label} (${shortcut})`}
           aria-pressed={activeTool === tool}
+          disabled={viewMode === "map" && tool !== "pan"}
           onClick={() => setActiveTool(tool)}
         >
           {icon}
         </button>
       ))}
+      <button
+        type="button"
+        className={`tool-panel-button${viewMode === "map" ? " tool-panel-button-active" : ""}`}
+        title="Map (M)"
+        aria-label="Map (M)"
+        aria-pressed={viewMode === "map"}
+        onClick={() => setViewMode(viewMode === "map" ? "single" : "map")}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7v6H3zM14 5h7v9h-7zM3 14h7v5H3zM14 17h7v2h-7z" /></svg>
+      </button>
     </div>
   );
 }
@@ -746,6 +922,7 @@ export function App() {
   const sceneId = useEditorStore((state) => state.sceneId);
   const activeProfile = useEditorStore((state) => state.activeProfile);
   const activeTool = useEditorStore((state) => state.activeTool);
+  const viewMode = useEditorStore((state) => state.viewMode);
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
   const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
@@ -779,12 +956,13 @@ export function App() {
       </header>
       <aside className="panel hierarchy-panel">
         <h1>Hierarchy</h1>
+        <WindowsSection document={document} sceneId={sceneId} />
         <HierarchyTree scene={scene} selectedNodeId={selectedNodeId} />
         <div className="hierarchy-assets-action">
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} selectedNodeId={selectedNodeId} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} />{assetsWindowOpen && <AssetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeId={selectedNodeId} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} />{assetsWindowOpen && <AssetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );
