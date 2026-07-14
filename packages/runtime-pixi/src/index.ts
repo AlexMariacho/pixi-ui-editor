@@ -43,6 +43,18 @@ export function resolveProfileTransform(node: UINode, profile: LayoutProfileId):
   };
 }
 
+export function fitSpineToTransform(
+  bounds: { x: number; y: number; width: number; height: number },
+  transform: UINode["transform"],
+): { scaleX: number; scaleY: number; x: number; y: number } | undefined {
+  if (!Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height) || bounds.width <= 0 || bounds.height <= 0) return undefined;
+  const scaleX = transform.width / bounds.width;
+  const scaleY = transform.height / bounds.height;
+  return Number.isFinite(scaleX) && scaleX > 0 && Number.isFinite(scaleY) && scaleY > 0
+    ? { scaleX, scaleY, x: -bounds.x * scaleX, y: -bounds.y * scaleY }
+    : undefined;
+}
+
 function createNodeView(node: UINode, transform: UINode["transform"], textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>): Container {
   switch (node.type) {
     case "container":
@@ -69,10 +81,17 @@ function createNodeView(node: UINode, transform: UINode["transform"], textures?:
       const skeletonData = spines?.get(node.assetId);
       if (skeletonData !== undefined) {
         const spine = new Spine(skeletonData);
-        if (node.animation !== undefined && skeletonData.findAnimation(node.animation) !== null) spine.state.setAnimation(0, node.animation, true);
-        return spine;
+        if (node.animation !== undefined && skeletonData.findAnimation(node.animation) !== null) spine.state.setAnimation(0, node.animation, node.loop ?? true);
+        const view = new Container();
+        const fit = fitSpineToTransform(skeletonData, transform);
+        if (fit !== undefined) {
+          spine.scale.set(fit.scaleX, fit.scaleY);
+          spine.position.set(fit.x, fit.y);
+        }
+        view.addChild(spine);
+        return view;
       }
-      return new Graphics().rect(0, 0, 100, 100).fill(0xff00ff);
+      return new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
     }
     case "prefab-instance":
       return new Graphics().rect(0, 0, 100, 100).fill(0xff00ff);
@@ -143,6 +162,40 @@ export function createSpineView(skeletonData: SkeletonData, animation?: string):
   const spine = new Spine(skeletonData);
   if (animation !== undefined && skeletonData.findAnimation(animation) !== null) spine.state.setAnimation(0, animation, true);
   return spine;
+}
+
+function findSpineChild(view: Container): Spine | undefined {
+  return view.children.find((child): child is Spine => child instanceof Spine);
+}
+
+/** Reads the current 1-based animation frame for an editor Spine node. */
+export function getSpineViewPlayback(view: Container, skeletonData: SkeletonData, animation: string): { current: number; total: number } | undefined {
+  const spine = findSpineChild(view);
+  const track = spine?.state.tracks[0];
+  const duration = skeletonData.findAnimation(animation)?.duration;
+  if (track === null || track === undefined || duration === undefined || duration <= 0) return undefined;
+  const fps = skeletonData.fps && skeletonData.fps > 0 ? skeletonData.fps : 60;
+  const total = Math.max(1, Math.round(duration * fps));
+  const time = track.loop ? track.trackTime % duration : Math.min(track.trackTime, duration);
+  return { current: Math.min(total, Math.floor(time * fps) + 1), total };
+}
+
+/** Seeks an editor Spine node to a 1-based animation frame without changing its serialized animation settings. */
+export function setSpineViewFrame(view: Container, frame: number, skeletonData: SkeletonData, animation: string): void {
+  const spine = findSpineChild(view);
+  const track = spine?.state.tracks[0];
+  const duration = skeletonData.findAnimation(animation)?.duration;
+  if (track === null || track === undefined || duration === undefined || duration <= 0) return;
+  const fps = skeletonData.fps && skeletonData.fps > 0 ? skeletonData.fps : 60;
+  const total = Math.max(1, Math.round(duration * fps));
+  track.trackTime = Math.min(total, Math.max(1, Math.round(frame)) - 1) / fps;
+  spine?.update(0);
+}
+
+/** Enables or pauses editor-only automatic playback without affecting serialized node data. */
+export function setSpineViewAutoplay(view: Container, autoplay: boolean): void {
+  const spine = findSpineChild(view);
+  if (spine !== undefined) spine.autoUpdate = autoplay;
 }
 
 /** Loads one texture from a data URI or a regular URL. */

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { serializeProjectDocument } from "@pixi-ui-editor/schema";
 import { Sprite, Texture } from "pixi.js";
 import { TextureAtlas } from "@esotericsoftware/spine-pixi-v8";
-import { assignAtlasPageTextures, buildSceneView, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
+import { assignAtlasPageTextures, buildSceneView, fitSpineToTransform, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -37,6 +37,13 @@ describe("sample project loader smoke test", () => {
 
     withDesktopOverride.layoutOverrides.desktop!.visible = false;
     expect(resolveProfileTransform(withDesktopOverride, "desktop").visible).toBe(false);
+  });
+
+  it("fits Spine setup bounds to the node transform dimensions", () => {
+    const transform = { x: 0, y: 0, width: 200, height: 200, scaleX: 1, scaleY: 1, rotation: 0 };
+
+    expect(fitSpineToTransform({ x: -50, y: 20, width: 100, height: 400 }, transform)).toEqual({ scaleX: 2, scaleY: 0.5, x: 100, y: -10 });
+    expect(fitSpineToTransform({ x: 0, y: 0, width: 0, height: 400 }, transform)).toBeUndefined();
   });
 
   it("uses supplied textures for image nodes and otherwise preserves the placeholder", () => {

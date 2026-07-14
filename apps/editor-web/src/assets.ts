@@ -22,6 +22,13 @@ export function loadEditorSceneTextures(document: ProjectDocument, sceneId: stri
   return loadSceneTextures(document, sceneId, resolveAssetUrl, textureCache);
 }
 
+export function getCachedImageAssetSize(asset: Asset): { width: number; height: number } | undefined {
+  if (asset.type !== "image") return undefined;
+  const texture = textureCache.get(asset.source.uri);
+  if (texture === undefined) return undefined;
+  return { width: texture.width, height: texture.height };
+}
+
 export function loadEditorSceneSpines(document: ProjectDocument, sceneId: string) {
   return loadSceneSpines(document, sceneId, resolveFileUrl, spineCache);
 }

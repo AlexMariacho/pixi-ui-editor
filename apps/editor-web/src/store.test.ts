@@ -78,8 +78,28 @@ describe("Spine assets and nodes", () => {
     const node = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
     expect(node).toMatchObject({ type: "spine", assetId: asset.id, transform: { width: 200, height: 200 } });
     useEditorStore.getState().updateSpineNodeAnimation(node.id, "idle");
-    expect(useEditorStore.getState().document.scenes[0]!.nodes.at(-1)).toMatchObject({ animation: "idle" });
+    useEditorStore.getState().updateSpineNodeLoop(node.id, false);
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.at(-1)).toMatchObject({ animation: "idle", loop: false });
     expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+});
+
+describe("addNodeFromAsset", () => {
+  it("creates a selected Spine node with the dropped asset ID", () => {
+    useEditorStore.getState().addSpineAsset("Hero", {
+      skeleton: { name: "hero.json", uri: "data:application/json;base64,e30=", mediaType: "application/json" },
+      atlas: { name: "hero.atlas", uri: "data:text/plain;base64,", mediaType: "text/plain" },
+      textures: [{ name: "hero.png", uri: "data:image/png;base64,AAAA", mediaType: "image/png" }],
+    });
+    const asset = useEditorStore.getState().document.assets.at(-1)!;
+
+    useEditorStore.getState().addNodeFromAsset(asset.id, { x: 123.45, y: 67.89 });
+
+    const scene = useEditorStore.getState().document.scenes[0]!;
+    const node = scene.nodes.at(-1)!;
+    expect(node).toMatchObject({ type: "spine", assetId: asset.id, parentId: null, transform: { x: 123.45, y: 67.89, width: 200, height: 200 } });
+    expect(scene.rootNodeIds.at(-1)).toBe(node.id);
+    expect(useEditorStore.getState().selectedNodeId).toBe(node.id);
   });
 });
 

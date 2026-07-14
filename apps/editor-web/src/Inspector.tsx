@@ -121,6 +121,11 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
   const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
   const setImageNodeAsset = useEditorStore((state) => state.setImageNodeAsset);
   const updateSpineNodeAnimation = useEditorStore((state) => state.updateSpineNodeAnimation);
+  const updateSpineNodeLoop = useEditorStore((state) => state.updateSpineNodeLoop);
+  const requestSpineFrame = useEditorStore((state) => state.requestSpineFrame);
+  const setSpineAutoplay = useEditorStore((state) => state.setSpineAutoplay);
+  const spineAutoplay = useEditorStore((state) => selectedNode?.type === "spine" ? state.spineAutoplay[selectedNode.id] ?? true : true);
+  const spinePlayback = useEditorStore((state) => selectedNode?.type === "spine" ? state.spinePlaybackFrames[selectedNode.id] : undefined);
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
   const [spineData, setSpineData] = useState<SkeletonData | undefined>();
@@ -169,6 +174,19 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
           {spineData?.animations.map((animation) => <option key={animation.name} value={animation.name}>{animation.name}</option>)}
         </select>
       </InspectorField>
+      <InspectorField label="Loop"><input type="checkbox" checked={selectedNode.loop ?? true} disabled={selectedNode.animation === undefined} onChange={(event) => updateSpineNodeLoop(selectedNode.id, event.target.checked)} /></InspectorField>
+      <InspectorField label="Autoplay"><input type="checkbox" checked={spineAutoplay} disabled={selectedNode.animation === undefined} onChange={(event) => setSpineAutoplay(selectedNode.id, event.target.checked)} /></InspectorField>
+      {(() => {
+        const animation = spineData?.findAnimation(selectedNode.animation ?? "");
+        const fps = spineData?.fps && spineData.fps > 0 ? spineData.fps : 60;
+        const total = spinePlayback?.total ?? Math.max(1, Math.round((animation?.duration ?? 0) * fps));
+        const current = Math.min(total, spinePlayback?.current ?? 1);
+        const setFrame = (frame: number) => requestSpineFrame(selectedNode.id, Math.min(total, Math.max(1, Math.round(frame))));
+        return <>
+          <NumberField label="Frame" value={current} step={1} onChange={setFrame} />
+          <InspectorField label="Frames"><output>{current} / {total}</output><span><button type="button" disabled={selectedNode.animation === undefined || current <= 1} onClick={() => setFrame(current - 1)}>−</button><button type="button" disabled={selectedNode.animation === undefined || current >= total} onClick={() => setFrame(current + 1)}>+</button></span></InspectorField>
+        </>;
+      })()}
     </InspectorWindow>}
     <InspectorWindow title="Layout Visibility">
       <InspectorField label="Horizontal"><input type="checkbox" checked={selectedNode.layoutOverrides?.desktop?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "desktop", event.target.checked)} /></InspectorField>

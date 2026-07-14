@@ -22,7 +22,7 @@ Pixi UI Editor — web-first редактор для сборки игровог
 - Остальные `apps/*` и пакеты, кроме `packages/schema` и `packages/runtime-pixi`, остаются запланированными заглушками.
 - **CI намеренно отсутствует** (решение владельца проекта от июля 2026): GitHub Actions вернём после того, как появится работающее приложение. Не добавляйте workflow без явного запроса.
 - PixiJS и React подключены только в `apps/editor-web`; серверный framework ещё не выбран.
-- **TASK-022 Iteration 06 завершён**: schema v1, Spine-assets (`.json` + `.atlas` + textures), production runtime Spine, import/replace/delete/preview и animation Inspector реализованы. Следующая задача — строго TASK-023 (drag-and-drop ассетов на сцену); остальные части Iteration 06 пока не реализованы.
+- **TASK-023 Iteration 06 завершён**: Assets поддерживает HTML5 drag-and-drop image и Spine-ассетов на canvas с profile-aware координатами, созданием и немедленным выделением node; runtime нормализует Spine внутри технического Pixi-container по transform node, а Inspector даёт loop и transient frame scrubbing. Следующая задача — строго TASK-024 (Windows и map); остальные части Iteration 06 пока не реализованы.
 
 ## Рабочий процесс разработки
 

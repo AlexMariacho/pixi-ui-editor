@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { buildSceneView, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore, type EditorTool } from "./store.js";
@@ -229,21 +229,26 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
   return <ul className="tree">{scene.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNodeId, setActiveProfile, setActiveTool, addNode }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNodeId, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
   selectedNodeId: string | null;
+  spineFrameRequest: number | undefined;
+  spineAutoplay: boolean;
   setActiveProfile: (profile: LayoutProfileId) => void;
   setActiveTool: (tool: EditorTool) => void;
   addNode: (type: "container" | "image" | "text" | "spine") => void;
+  addNodeFromAsset: (assetId: string, position: { x: number; y: number }) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<Container | null>(null);
   const artboardRef = useRef<Graphics | null>(null);
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
+  const spineDataRef = useRef<Map<string, SkeletonData>>(new Map());
+  const spinePlaybackTickerRef = useRef<(() => void) | null>(null);
   const selectionGraphicsRef = useRef<Graphics | null>(null);
   const resizeHandlesRef = useRef<Container | null>(null);
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
@@ -254,6 +259,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     nodeId: string;
     offsetX: number;
     offsetY: number;
+    x: number;
+    y: number;
   } | null>(null);
   const resizeDragRef = useRef<{
     handle: ResizeHandle;
@@ -263,6 +270,11 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     transform: UINode["transform"];
     scaleX: number;
     scaleY: number;
+    viewScaleX: number;
+    viewScaleY: number;
+    viewPositionX: number;
+    viewPositionY: number;
+    patch: Partial<UINode["transform"]>;
   } | null>(null);
   const startDragRef = useRef<((nodeId: string, nodeView: Container, event: FederatedPointerEvent) => void) | null>(null);
   const startResizeRef = useRef<((handle: ResizeHandle, event: FederatedPointerEvent) => void) | null>(null);
@@ -401,10 +413,13 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       };
 
       const stopDrag = () => {
+        const drag = dragRef.current;
+        if (drag === null) return;
         dragRef.current = null;
         application.stage.off("pointermove", moveDraggedNode);
         application.stage.off("pointerup", stopDrag);
         application.stage.off("pointerupoutside", stopDrag);
+        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, { x: drag.x, y: drag.y });
       };
       const moveDraggedNode = (event: FederatedPointerEvent) => {
         const drag = dragRef.current;
@@ -416,10 +431,11 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
         if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
 
         const localPosition = parentView.toLocal(event.global);
-        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, {
-          x: Math.round((localPosition.x - drag.offsetX) * 100) / 100,
-          y: Math.round((localPosition.y - drag.offsetY) * 100) / 100,
-        });
+        const x = Math.round((localPosition.x - drag.offsetX) * 100) / 100;
+        const y = Math.round((localPosition.y - drag.offsetY) * 100) / 100;
+        nodeView.position.set(x, y);
+        dragRef.current = { ...drag, x, y };
+        redrawSelectionRef.current();
       };
       startDragRef.current = (nodeId, nodeView, event) => {
         const parentView = nodeView.parent;
@@ -430,6 +446,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
           nodeId,
           offsetX: localPosition.x - nodeView.position.x,
           offsetY: localPosition.y - nodeView.position.y,
+          x: nodeView.position.x,
+          y: nodeView.position.y,
         };
         application.stage.on("pointermove", moveDraggedNode);
         application.stage.on("pointerup", stopDrag);
@@ -437,16 +455,18 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       };
 
       const stopResize = () => {
+        const drag = resizeDragRef.current;
+        if (drag === null) return;
         resizeDragRef.current = null;
         application.stage.off("pointermove", moveResizedNode);
         application.stage.off("pointerup", stopResize);
         application.stage.off("pointerupoutside", stopResize);
+        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, drag.patch);
       };
       const moveResizedNode = (event: FederatedPointerEvent) => {
         const drag = resizeDragRef.current;
         if (drag === null) return;
 
-        // Each commit rebuilds the scene, so resolve the current view before each calculation.
         const nodeView = nodeViewsRef.current.get(drag.nodeId);
         const parentView = nodeView?.parent;
         if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
@@ -472,7 +492,16 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
         for (const key of Object.keys(patch) as (keyof UINode["transform"])[]) {
           patch[key] = roundTransformValue(patch[key]!);
         }
-        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, patch);
+        nodeView.scale.set(
+          drag.viewScaleX * (patch.width ?? drag.transform.width) / drag.transform.width,
+          drag.viewScaleY * (patch.height ?? drag.transform.height) / drag.transform.height,
+        );
+        nodeView.position.set(
+          drag.viewPositionX + (patch.x ?? drag.transform.x) - drag.transform.x,
+          drag.viewPositionY + (patch.y ?? drag.transform.y) - drag.transform.y,
+        );
+        resizeDragRef.current = { ...drag, patch };
+        redrawSelectionRef.current();
       };
       startResizeRef.current = (handle, event) => {
         const state = useEditorStore.getState();
@@ -496,6 +525,11 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
           transform: { ...transform },
           scaleX: nodeView.width / transform.width,
           scaleY: nodeView.height / transform.height,
+          viewScaleX: nodeView.scale.x,
+          viewScaleY: nodeView.scale.y,
+          viewPositionX: nodeView.position.x,
+          viewPositionY: nodeView.position.y,
+          patch: {},
         };
         application.stage.on("pointermove", moveResizedNode);
         application.stage.on("pointerup", stopResize);
@@ -516,6 +550,9 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       artboardRef.current = null;
       sceneRootRef.current = null;
       nodeViewsRef.current = new Map();
+      spineDataRef.current = new Map();
+      if (spinePlaybackTickerRef.current !== null) application.ticker.remove(spinePlaybackTickerRef.current);
+      spinePlaybackTickerRef.current = null;
       selectionGraphicsRef.current = null;
       resizeHandlesRef.current = null;
       fitCameraRef.current = null;
@@ -563,7 +600,29 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       sceneRootRef.current?.destroy({ children: true });
       sceneRootRef.current = root;
       nodeViewsRef.current = nodeViews;
+      spineDataRef.current = spines;
       world.addChild(root);
+      const playbackState = useEditorStore.getState();
+      for (const node of scene.nodes) {
+        if (node.type !== "spine") continue;
+        const view = nodeViews.get(node.id);
+        if (view !== undefined) setSpineViewAutoplay(view, playbackState.spineAutoplay[node.id] ?? true);
+      }
+
+      if (spinePlaybackTickerRef.current !== null) application.ticker.remove(spinePlaybackTickerRef.current);
+      const reportSpinePlayback = () => {
+        const state = useEditorStore.getState();
+        const nodeId = state.selectedNodeId;
+        const node = state.document.scenes.find((candidate) => candidate.id === state.sceneId)?.nodes.find((candidate) => candidate.id === nodeId);
+        if (node?.type !== "spine" || node.animation === undefined) return;
+        const view = nodeViews.get(node.id);
+        const spineData = spines.get(node.assetId);
+        if (view === undefined || spineData === undefined) return;
+        const playback = getSpineViewPlayback(view, spineData, node.animation);
+        if (playback !== undefined) state.reportSpinePlaybackFrame(node.id, playback);
+      };
+      spinePlaybackTickerRef.current = reportSpinePlayback;
+      application.ticker.add(reportSpinePlayback);
 
       if (!cameraFittedRef.current || profileChanged || viewportChanged) {
         cameraFittedRef.current = true;
@@ -577,11 +636,45 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
   }, [activeProfile, application, document, sceneId]);
 
   useEffect(() => {
+    if (spineFrameRequest === undefined || selectedNodeId === null) return;
+    const node = document.scenes.find((scene) => scene.id === sceneId)?.nodes.find((candidate) => candidate.id === selectedNodeId);
+    if (node?.type !== "spine" || node.animation === undefined) return;
+    const view = nodeViewsRef.current.get(node.id);
+    const spineData = spineDataRef.current.get(node.assetId);
+    if (view !== undefined && spineData !== undefined) setSpineViewFrame(view, spineFrameRequest, spineData, node.animation);
+  }, [application, document, sceneId, selectedNodeId, spineFrameRequest]);
+
+  useEffect(() => {
+    if (selectedNodeId === null) return;
+    const node = document.scenes.find((scene) => scene.id === sceneId)?.nodes.find((candidate) => candidate.id === selectedNodeId);
+    if (node?.type === "spine") {
+      const view = nodeViewsRef.current.get(node.id);
+      if (view !== undefined) setSpineViewAutoplay(view, spineAutoplay);
+    }
+  }, [document, sceneId, selectedNodeId, spineAutoplay]);
+
+  useEffect(() => {
     redrawSelectionRef.current();
   }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId]);
 
+  const isAssetDrag = (event: React.DragEvent<HTMLDivElement>) => Array.from(event.dataTransfer.types).includes("application/x-pixi-ui-editor-asset");
+  const dropAsset = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isAssetDrag(event)) return;
+    event.preventDefault();
+    const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
+    const asset = document.assets.find((candidate) => candidate.id === assetId);
+    const world = worldRef.current;
+    const host = hostRef.current;
+    if (asset === undefined || world === null || host === null) return;
+    const rect = host.getBoundingClientRect();
+    addNodeFromAsset(assetId, {
+      x: roundTransformValue((event.clientX - rect.left - world.position.x) / world.scale.x),
+      y: roundTransformValue((event.clientY - rect.top - world.position.y) / world.scale.y),
+    });
+  };
+
   return (
-    <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`}>
+    <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={dropAsset}>
       <ToolPanel activeTool={activeTool} setActiveTool={setActiveTool} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
@@ -656,7 +749,10 @@ export function App() {
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
   const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
+  const spineFrameRequest = useEditorStore((state) => selectedNodeId === null ? undefined : state.spineFrameRequests[selectedNodeId]);
+  const spineAutoplay = useEditorStore((state) => selectedNodeId === null ? true : state.spineAutoplay[selectedNodeId] ?? true);
   const addNode = useEditorStore((state) => state.addNode);
+  const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
   const deleteNode = useEditorStore((state) => state.deleteNode);
   const resetToSample = useEditorStore((state) => state.resetToSample);
   const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
@@ -688,7 +784,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} />{assetsWindowOpen && <AssetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} selectedNodeId={selectedNodeId} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} />{assetsWindowOpen && <AssetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );

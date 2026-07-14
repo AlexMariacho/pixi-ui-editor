@@ -10,6 +10,7 @@ import {
 } from "@pixi-ui-editor/schema";
 import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
+import { getCachedImageAssetSize } from "./assets.js";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
@@ -20,6 +21,9 @@ export type EditorState = {
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
   selectedNodeId: string | null;
+  spineFrameRequests: Record<string, number>;
+  spinePlaybackFrames: Record<string, { current: number; total: number }>;
+  spineAutoplay: Record<string, boolean>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   selectNode(id: string | null): void;
@@ -34,7 +38,12 @@ export type EditorState = {
   replaceSpineAssetFiles(assetId: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
   deleteAsset(assetId: string): void;
   updateSpineNodeAnimation(nodeId: string, animation: string | undefined): void;
+  updateSpineNodeLoop(nodeId: string, loop: boolean): void;
+  requestSpineFrame(nodeId: string, frame: number): void;
+  setSpineAutoplay(nodeId: string, autoplay: boolean): void;
+  reportSpinePlaybackFrame(nodeId: string, playback: { current: number; total: number }): void;
   addNode(type: "container" | "image" | "text" | "spine"): void;
+  addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
 };
@@ -79,6 +88,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   activeProfile: "desktop",
   activeTool: "select",
   selectedNodeId: null,
+  spineFrameRequests: {},
+  spinePlaybackFrames: {},
+  spineAutoplay: {},
   setActiveProfile: (profile) => set({ activeProfile: profile }),
   setActiveTool: (tool) => set({ activeTool: tool }),
   selectNode: (id) => set({ selectedNodeId: id }),
@@ -223,6 +235,24 @@ export const useEditorStore = create<EditorState>((set) => ({
     else node.animation = animation;
     return commitCandidate(state, candidate, "Spine animation update was rejected because it makes the project document invalid.");
   }),
+  updateSpineNodeLoop: (nodeId, loop) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = candidate.scenes.find((scene) => scene.id === state.sceneId)?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (node?.type !== "spine") {
+      console.warn(`Cannot update Spine loop for node '${nodeId}': it is not a Spine node.`);
+      return state;
+    }
+    node.loop = loop;
+    return commitCandidate(state, candidate, "Spine loop update was rejected because it makes the project document invalid.");
+  }),
+  requestSpineFrame: (nodeId, frame) => set((state) => ({ spineFrameRequests: { ...state.spineFrameRequests, [nodeId]: frame } })),
+  setSpineAutoplay: (nodeId, autoplay) => set((state) => ({ spineAutoplay: { ...state.spineAutoplay, [nodeId]: autoplay } })),
+  reportSpinePlaybackFrame: (nodeId, playback) => set((state) => {
+    const current = state.spinePlaybackFrames[nodeId];
+    return current?.current === playback.current && current.total === playback.total
+      ? state
+      : { spinePlaybackFrames: { ...state.spinePlaybackFrames, [nodeId]: playback } };
+  }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);
     const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
@@ -278,6 +308,35 @@ export const useEditorStore = create<EditorState>((set) => ({
 
     return commitCandidate(state, candidate, "Node creation was rejected because it makes the project document invalid.");
   }),
+  addNodeFromAsset: (assetId, position) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
+    const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
+    if (scene === undefined || asset === undefined) {
+      console.warn(`Cannot add a node from asset '${assetId}': the scene or asset does not exist.`);
+      return state;
+    }
+
+    const isImage = asset.type === "image";
+    const imageSize = getCachedImageAssetSize(asset);
+    const width = isImage ? imageSize?.width ?? 100 : 200;
+    const height = isImage ? imageSize?.height ?? 100 : 200;
+    const node: UINode = {
+      id: createStableId(),
+      name: asset.name,
+      type: isImage ? "image" : "spine",
+      assetId: asset.id,
+      parentId: null,
+      children: [],
+      visible: true,
+      transform: { x: position.x, y: position.y, width, height, scaleX: 1, scaleY: 1, rotation: 0 },
+    };
+    scene.nodes.push(node);
+    scene.rootNodeIds.push(node.id);
+
+    const committed = commitCandidate(state, candidate, "Asset node creation was rejected because it makes the project document invalid.");
+    return committed === state ? state : { ...committed, selectedNodeId: node.id };
+  }),
   deleteNode: (nodeId) => set((state) => {
     const candidate = structuredClone(state.document);
     const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
@@ -315,7 +374,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   }),
 }));
 
-useEditorStore.subscribe((state) => {
+useEditorStore.subscribe((state, previousState) => {
+  if (state.document === previousState.document) return;
   if (typeof localStorage === "undefined") return;
   if (skipNextPersistence) {
     skipNextPersistence = false;
