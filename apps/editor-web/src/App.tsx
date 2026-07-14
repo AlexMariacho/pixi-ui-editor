@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
-import { useEditorStore, type EditorTool, type ViewMode } from "./store.js";
+import { getEditingTarget, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures } from "./assets.js";
 import { AssetsWindow } from "./AssetPanel.js";
+import { NODE_DRAG_TYPE, PREFAB_DRAG_TYPE, PresetsWindow } from "./PresetsPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
 
 const CANVAS_BACKGROUND = 0x181818;
@@ -203,7 +204,7 @@ function ScreenResolutionsMenu({
   );
 }
 
-function WindowsSection({ document, sceneId }: { document: ProjectDocument; sceneId: string }) {
+function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocument; sceneId: string; disabled: boolean }) {
   const selectScene = useEditorStore((state) => state.selectScene);
   const addScene = useEditorStore((state) => state.addScene);
   const renameScene = useEditorStore((state) => state.renameScene);
@@ -238,8 +239,10 @@ function WindowsSection({ document, sceneId }: { document: ProjectDocument; scen
               <button
                 type="button"
                 className={`window-row${scene.id === sceneId ? " window-row-active" : ""}`}
+                disabled={disabled}
                 onClick={() => selectScene(scene.id)}
                 onDoubleClick={() => {
+                  if (disabled) return;
                   setRenamingSceneId(scene.id);
                   setRenameText(scene.name);
                 }}
@@ -252,7 +255,7 @@ function WindowsSection({ document, sceneId }: { document: ProjectDocument; scen
               className="window-delete"
               aria-label={`Delete window ${scene.name}`}
               title={`Delete window ${scene.name}`}
-              disabled={document.scenes.length === 1}
+              disabled={disabled || document.scenes.length === 1}
               onClick={() => {
                 if (window.confirm(`Delete window "${scene.name}"?`)) deleteScene(scene.id);
               }}
@@ -262,14 +265,14 @@ function WindowsSection({ document, sceneId }: { document: ProjectDocument; scen
           </li>
         ))}
       </ul>
-      <button type="button" className="window-add" onClick={() => addScene()}>+ Window</button>
+      <button type="button" className="window-add" disabled={disabled} onClick={() => addScene()}>+ Window</button>
     </section>
   );
 }
 
-function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scenes"][number]; selectedNodeId: string | null }) {
+function HierarchyTree({ owner, selectedNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeId: string | null }) {
   const selectNode = useEditorStore((state) => state.selectNode);
-  const nodesById = new Map<string, UINode>(scene.nodes.map((node) => [node.id, node]));
+  const nodesById = new Map<string, UINode>(owner.nodes.map((node) => [node.id, node]));
 
   const renderNode = (nodeId: string, depth: number): ReactNode => {
     const node = nodesById.get(nodeId);
@@ -281,6 +284,11 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
           type="button"
           className={`tree-node${node.id === selectedNodeId ? " tree-node-selected" : ""}`}
           style={{ paddingInlineStart: `${depth * 16 + 12}px` }}
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.setData(NODE_DRAG_TYPE, node.id);
+            event.dataTransfer.effectAllowed = "copy";
+          }}
           onClick={() => selectNode(node.id)}
         >
           {node.name} <span>({node.type})</span>
@@ -290,22 +298,25 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
     );
   };
 
-  return <ul className="tree">{scene.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
+  return <ul className="tree">{owner.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeId, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
   viewMode: ViewMode;
   selectedNodeId: string | null;
+  editingPrefabName: string | null;
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
   setActiveProfile: (profile: LayoutProfileId) => void;
   setActiveTool: (tool: EditorTool) => void;
   addNode: (type: "container" | "image" | "text" | "spine") => void;
   addNodeFromAsset: (assetId: string, position: { x: number; y: number }) => void;
+  addPrefabInstance: (prefabId: string, position: { x: number; y: number }) => void;
+  finishEditingPrefab: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<Container | null>(null);
@@ -573,9 +584,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const state = useEditorStore.getState();
         const nodeId = state.selectedNodeId;
         if (nodeId === null) return;
-        const node = state.document.scenes
-          .find((scene) => scene.id === state.sceneId)
-          ?.nodes.find((candidate) => candidate.id === nodeId);
+        const node = getEditingTarget(state.document, state)?.nodes.find((candidate) => candidate.id === nodeId);
         const nodeView = nodeViewsRef.current.get(nodeId);
         const parentView = nodeView?.parent;
         if (node === undefined || nodeView === undefined || parentView === null || parentView === undefined) return;
@@ -731,7 +740,9 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     const viewport = scene.layout.referenceViewports[activeProfile];
     const viewportChanged = viewportRef.current?.width !== viewport.width || viewportRef.current?.height !== viewport.height;
     viewportRef.current = { width: viewport.width, height: viewport.height };
-    artboardRef.current?.clear().rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
+    // У пресета нет собственного viewport, поэтому рамка reference viewport в режиме его редактирования не рисуется.
+    const artboard = artboardRef.current?.clear();
+    if (editingPrefabName === null) artboard?.rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
     void Promise.all([loadEditorSceneTextures(document, sceneId), loadEditorSceneSpines(document, sceneId)]).then(([textures, spines]) => {
       if (cancelled) return;
@@ -764,7 +775,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const reportSpinePlayback = () => {
         const state = useEditorStore.getState();
         const nodeId = state.selectedNodeId;
-        const node = state.document.scenes.find((candidate) => candidate.id === state.sceneId)?.nodes.find((candidate) => candidate.id === nodeId);
+        const node = getEditingTarget(state.document, state)?.nodes.find((candidate) => candidate.id === nodeId);
         if (node?.type !== "spine" || node.animation === undefined) return;
         const view = nodeViews.get(node.id);
         const spineData = spines.get(node.assetId);
@@ -784,7 +795,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, application, document, sceneId, viewMode]);
+  }, [activeProfile, application, document, editingPrefabName, sceneId, viewMode]);
 
   useEffect(() => {
     if (spineFrameRequest === undefined || selectedNodeId === null) return;
@@ -808,24 +819,35 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     redrawSelectionRef.current();
   }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId]);
 
-  const isAssetDrag = (event: React.DragEvent<HTMLDivElement>) => viewMode === "single" && Array.from(event.dataTransfer.types).includes("application/x-pixi-ui-editor-asset");
-  const dropAsset = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!isAssetDrag(event)) return;
-    event.preventDefault();
-    const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
-    const asset = document.assets.find((candidate) => candidate.id === assetId);
+  const toWorldPosition = (event: React.DragEvent<HTMLDivElement>) => {
     const world = worldRef.current;
     const host = hostRef.current;
-    if (asset === undefined || world === null || host === null) return;
+    if (world === null || host === null) return undefined;
     const rect = host.getBoundingClientRect();
-    addNodeFromAsset(assetId, {
+    return {
       x: roundTransformValue((event.clientX - rect.left - world.position.x) / world.scale.x),
       y: roundTransformValue((event.clientY - rect.top - world.position.y) / world.scale.y),
-    });
+    };
+  };
+  const isAssetDrag = (event: React.DragEvent<HTMLDivElement>) => viewMode === "single" && Array.from(event.dataTransfer.types).includes("application/x-pixi-ui-editor-asset");
+  const isPrefabDrag = (event: React.DragEvent<HTMLDivElement>) => viewMode === "single" && editingPrefabName === null && Array.from(event.dataTransfer.types).includes(PREFAB_DRAG_TYPE);
+  const drop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (isAssetDrag(event)) {
+      event.preventDefault();
+      const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
+      const position = toWorldPosition(event);
+      if (document.assets.some((candidate) => candidate.id === assetId) && position !== undefined) addNodeFromAsset(assetId, position);
+      return;
+    }
+    if (!isPrefabDrag(event)) return;
+    event.preventDefault();
+    const prefabId = event.dataTransfer.getData(PREFAB_DRAG_TYPE);
+    const position = toWorldPosition(event);
+    if (document.prefabs.some((candidate) => candidate.id === prefabId) && position !== undefined) addPrefabInstance(prefabId, position);
   };
 
   return (
-    <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={dropAsset}>
+    <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event) || isPrefabDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={drop}>
       <ToolPanel activeTool={activeTool} viewMode={viewMode} setActiveTool={setActiveTool} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
@@ -844,6 +866,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
       </div>
       <div className="canvas-hud">
+        {editingPrefabName !== null && (
+          <>
+            <span className="editing-prefab-badge">Editing preset: {editingPrefabName}</span>
+            <button type="button" onClick={finishEditingPrefab}>Done</button>
+          </>
+        )}
         <button type="button" onClick={() => fitCameraRef.current?.()}>Fit</button>
         <span>{Math.round(zoom * 100)}%</span>
       </div>
@@ -861,12 +889,20 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
       const state = useEditorStore.getState();
       const key = event.key.toLowerCase();
       if (key === "m") {
+        if (state.editingPrefabId !== null) return;
         state.setViewMode(state.viewMode === "map" ? "single" : "map");
         return;
       }
-      if (event.key === "Escape" && state.viewMode === "map") {
-        state.setViewMode("single");
-        return;
+      if (event.key === "Escape") {
+        // Escape в первую очередь завершает редактирование пресета и только потом выходит из Map.
+        if (state.editingPrefabId !== null) {
+          state.setEditingPrefabId(null);
+          return;
+        }
+        if (state.viewMode === "map") {
+          state.setViewMode("single");
+          return;
+        }
       }
 
       const toolByKey: Record<string, EditorTool> = { q: "pan", w: "select", e: "resize" };
@@ -881,6 +917,7 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
   }, [setActiveTool]);
 
   const setViewMode = useEditorStore((state) => state.setViewMode);
+  const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
     { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: "Q" },
     { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: "W" },
@@ -909,6 +946,7 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
         title="Map (M)"
         aria-label="Map (M)"
         aria-pressed={viewMode === "map"}
+        disabled={editingPrefabId !== null}
         onClick={() => setViewMode(viewMode === "map" ? "single" : "map")}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7v6H3zM14 5h7v9h-7zM3 14h7v5H3zM14 17h7v2h-7z" /></svg>
@@ -930,18 +968,36 @@ export function App() {
   const spineAutoplay = useEditorStore((state) => selectedNodeId === null ? true : state.spineAutoplay[selectedNodeId] ?? true);
   const addNode = useEditorStore((state) => state.addNode);
   const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
+  const addPrefabInstance = useEditorStore((state) => state.addPrefabInstance);
   const deleteNode = useEditorStore((state) => state.deleteNode);
   const resetToSample = useEditorStore((state) => state.resetToSample);
   const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
+  const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
+  const setEditingPrefabId = useEditorStore((state) => state.setEditingPrefabId);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+  const editingPrefab = document.prefabs.find((candidate) => candidate.id === editingPrefabId);
 
-  if (scene === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
+  // В режиме редактирования canvas рендерит содержимое пресета как синтетическую сцену того же документа.
+  const renderDocument = useMemo<ProjectDocument | undefined>(() => {
+    if (scene === undefined) return undefined;
+    if (editingPrefab === undefined) return document;
+    return {
+      ...document,
+      scenes: [{ id: editingPrefab.id, name: editingPrefab.name, rootNodeIds: editingPrefab.rootNodeIds, nodes: editingPrefab.nodes, layout: scene.layout }],
+    };
+  }, [document, editingPrefab, scene]);
 
-  const selectedNode = scene.nodes.find((node) => node.id === selectedNodeId);
-  const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && scene.rootNodeIds.length === 1);
-  const viewport = scene.layout.referenceViewports[activeProfile];
   const assetsWindowOpen = useUiPrefsStore((state) => state.assetsWindowOpen);
   const setAssetsWindowOpen = useUiPrefsStore((state) => state.setAssetsWindowOpen);
+  const presetsWindowOpen = useUiPrefsStore((state) => state.presetsWindowOpen);
+  const setPresetsWindowOpen = useUiPrefsStore((state) => state.setPresetsWindowOpen);
+
+  if (scene === undefined || renderDocument === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
+
+  const owner = editingPrefab ?? scene;
+  const selectedNode = owner.nodes.find((node) => node.id === selectedNodeId);
+  const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && owner.rootNodeIds.length === 1);
+  const viewport = scene.layout.referenceViewports[activeProfile];
 
   return (
     <main className="editor-shell">
@@ -956,13 +1012,14 @@ export function App() {
       </header>
       <aside className="panel hierarchy-panel">
         <h1>Hierarchy</h1>
-        <WindowsSection document={document} sceneId={sceneId} />
-        <HierarchyTree scene={scene} selectedNodeId={selectedNodeId} />
+        <WindowsSection document={document} sceneId={sceneId} disabled={editingPrefab !== undefined} />
+        <HierarchyTree owner={owner} selectedNodeId={selectedNodeId} />
         <div className="hierarchy-assets-action">
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
+          <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeId={selectedNodeId} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} />{assetsWindowOpen && <AssetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );

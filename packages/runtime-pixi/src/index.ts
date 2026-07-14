@@ -1,4 +1,4 @@
-import { migrateProjectDocument, type Asset, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
+import { migrateProjectDocument, type Asset, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
 import { Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { AtlasAttachmentLoader, SkeletonJson, Spine, SpineTexture, TextureAtlas, type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 export type { SkeletonData } from "@esotericsoftware/spine-pixi-v8";
@@ -55,7 +55,7 @@ export function fitSpineToTransform(
     : undefined;
 }
 
-function createNodeView(node: UINode, transform: UINode["transform"], textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>): Container {
+function createNodeView(node: UINode, transform: UINode["transform"], textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): Container {
   switch (node.type) {
     case "container":
       return new Container();
@@ -93,8 +93,10 @@ function createNodeView(node: UINode, transform: UINode["transform"], textures?:
       }
       return new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
     }
-    case "prefab-instance":
-      return new Graphics().rect(0, 0, 100, 100).fill(0xff00ff);
+    case "prefab-instance": {
+      const view = expandPrefab?.(node.prefabId);
+      return view ?? new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+    }
   }
 }
 
@@ -112,40 +114,69 @@ export function buildSceneView(
     throw new Error(`Scene '${sceneId}' does not exist in the project document.`);
   }
 
-  const nodesById = new Map(scene.nodes.map((node) => [node.id, node]));
   const nodeViews = new Map<string, Container>();
 
-  const buildNode = (nodeId: string): Container => {
-    const node = nodesById.get(nodeId);
+  // Views раскрытых prefab-определений не регистрируются в nodeViews: инстанс редактируется как единое целое.
+  const buildOwner = (owner: { rootNodeIds: string[]; nodes: UINode[] }, registerViews: boolean, expandingPrefabIds: ReadonlySet<string>): Container => {
+    const nodesById = new Map(owner.nodes.map((node) => [node.id, node]));
 
-    if (node === undefined) {
-      throw new Error(`Scene '${sceneId}' references missing node '${nodeId}'.`);
+    const buildNode = (nodeId: string): Container => {
+      const node = nodesById.get(nodeId);
+
+      if (node === undefined) {
+        throw new Error(`Scene '${sceneId}' references missing node '${nodeId}'.`);
+      }
+
+      const { transform, visible } = resolveProfileTransform(node, profile);
+      const view = createNodeView(node, transform, textures, spines, (prefabId) => {
+        const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
+        if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
+        return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]));
+      });
+      const pivotX = (transform.pivotX ?? 0) * transform.width;
+      const pivotY = (transform.pivotY ?? 0) * transform.height;
+      view.pivot.set(pivotX, pivotY);
+      view.position.set(transform.x + pivotX, transform.y + pivotY);
+      view.scale.set(view.scale.x * transform.scaleX, view.scale.y * transform.scaleY);
+      view.rotation = transform.rotation;
+      view.visible = visible;
+      if (registerViews) nodeViews.set(node.id, view);
+
+      for (const childId of node.children) {
+        view.addChild(buildNode(childId));
+      }
+
+      return view;
+    };
+
+    const ownerRoot = new Container();
+    for (const rootNodeId of owner.rootNodeIds) {
+      ownerRoot.addChild(buildNode(rootNodeId));
     }
 
-    const { transform, visible } = resolveProfileTransform(node, profile);
-    const view = createNodeView(node, transform, textures, spines);
-    const pivotX = (transform.pivotX ?? 0) * transform.width;
-    const pivotY = (transform.pivotY ?? 0) * transform.height;
-    view.pivot.set(pivotX, pivotY);
-    view.position.set(transform.x + pivotX, transform.y + pivotY);
-    view.scale.set(view.scale.x * transform.scaleX, view.scale.y * transform.scaleY);
-    view.rotation = transform.rotation;
-    view.visible = visible;
-    nodeViews.set(node.id, view);
-
-    for (const childId of node.children) {
-      view.addChild(buildNode(childId));
-    }
-
-    return view;
+    return ownerRoot;
   };
 
-  const root = new Container();
-  for (const rootNodeId of scene.rootNodeIds) {
-    root.addChild(buildNode(rootNodeId));
-  }
+  return { root: buildOwner(scene, true, new Set()), nodeViews };
+}
 
-  return { root, nodeViews };
+/** Lists the nodes a scene renders, including nodes of prefab definitions its prefab instances expand to. */
+function collectRenderedNodes(document: ProjectDocument, scene: Scene): UINode[] {
+  const nodes: UINode[] = [];
+  const expandedPrefabIds = new Set<string>();
+
+  const visit = (list: UINode[]): void => {
+    for (const node of list) {
+      nodes.push(node);
+      if (node.type !== "prefab-instance" || expandedPrefabIds.has(node.prefabId)) continue;
+      expandedPrefabIds.add(node.prefabId);
+      const prefab = document.prefabs.find((candidate) => candidate.id === node.prefabId);
+      if (prefab !== undefined) visit(prefab.nodes);
+    }
+  };
+
+  visit(scene.nodes);
+  return nodes;
 }
 
 /** Assigns atlas pages by their exported image filename, never by their array index. */
@@ -219,7 +250,7 @@ export async function loadSceneTextures(
   const assetsById = new Map(document.assets.map((asset) => [asset.id, asset]));
   const textures = new Map<string, Texture>();
 
-  for (const node of scene.nodes) {
+  for (const node of collectRenderedNodes(document, scene)) {
     if (node.type !== "image" || textures.has(node.assetId)) continue;
 
     const asset = assetsById.get(node.assetId);
@@ -252,7 +283,7 @@ export async function loadSceneSpines(
 
   const assetsById = new Map(document.assets.map((asset) => [asset.id, asset]));
   const spines = new Map<string, SkeletonData>();
-  for (const node of scene.nodes) {
+  for (const node of collectRenderedNodes(document, scene)) {
     if (node.type !== "spine" || spines.has(node.assetId)) continue;
     const asset = assetsById.get(node.assetId);
     if (asset?.type !== "spine") continue;

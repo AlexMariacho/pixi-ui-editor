@@ -746,3 +746,86 @@ body { margin: 0; }
 }
 
 .load-error { padding: 24px; color: var(--danger); font-weight: 600; }
+
+/* Presets window */
+
+.presets-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 10px;
+  overflow: auto;
+}
+
+.presets-panel-drop-active { outline: 2px dashed var(--accent, #4c9aff); outline-offset: -4px; }
+
+.presets-drop-hint {
+  margin: 0;
+  padding: 8px;
+  border: 1px dashed #4a4a4a;
+  border-radius: 6px;
+  color: #9a9a9a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #262626;
+}
+
+.preset-row-editing { outline: 1px solid #4c9aff; }
+
+.preset-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  font-size: 13px;
+}
+
+.preset-name .preset-usage { color: #9a9a9a; }
+
+.preset-rename-input { flex: 1 1 auto; min-width: 0; }
+
+.preset-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+
+.preset-actions button {
+  padding: 2px 8px;
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  background: var(--bg-button, #2e2e2e);
+  color: inherit;
+  cursor: pointer;
+}
+
+.preset-actions button:hover:not(:disabled) { background: var(--bg-button-hover, #3a3a3a); border-color: #5a5a5a; }
+
+.preset-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Preset editing HUD */
+
+.editing-prefab-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #4c9aff;
+  color: #10131a;
+  font-size: 12px;
+  font-weight: 600;
+}
