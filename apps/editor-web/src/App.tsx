@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "r
 import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
-import { useEditorStore } from "./store.js";
+import { useEditorStore, type EditorTool } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneTextures } from "./assets.js";
 import { AssetsWindow } from "./AssetPanel.js";
@@ -214,12 +214,14 @@ function HierarchyTree({ scene, selectedNodeId }: { scene: ProjectDocument["scen
   return <ul className="tree">{scene.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActiveProfile, addNode }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNodeId, setActiveProfile, setActiveTool, addNode }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
+  activeTool: EditorTool;
   selectedNodeId: string | null;
   setActiveProfile: (profile: LayoutProfileId) => void;
+  setActiveTool: (tool: EditorTool) => void;
   addNode: (type: "container" | "image" | "text") => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -282,7 +284,7 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
       application.stage.eventMode = "static";
       application.stage.hitArea = application.screen;
       application.stage.on("pointerdown", (event) => {
-        if (event.button === 0) useEditorStore.getState().selectNode(null);
+        if (event.button === 0 && useEditorStore.getState().activeTool !== "pan") useEditorStore.getState().selectNode(null);
       });
 
       const syncCamera = () => {
@@ -319,7 +321,8 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
         if (event.button === 1) event.preventDefault();
       };
       const onPointerDown = (event: PointerEvent) => {
-        if (event.button !== 1) return;
+        const activeTool = useEditorStore.getState().activeTool;
+        if (event.button !== 1 && !(event.button === 0 && activeTool === "pan")) return;
         event.preventDefault();
         pan = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
         canvas.style.cursor = "grabbing";
@@ -336,7 +339,7 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
         if (pan === null || event.pointerId !== pan.pointerId) return;
         pan = null;
         if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-        canvas.style.cursor = "";
+        canvas.style.cursor = useEditorStore.getState().activeTool === "pan" ? "grab" : "";
       };
 
       canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -411,6 +414,11 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
   }, []);
 
   useEffect(() => {
+    if (application === null) return;
+    application.canvas.style.cursor = activeTool === "pan" ? "grab" : "";
+  }, [activeTool, application]);
+
+  useEffect(() => {
     const world = worldRef.current;
     if (application === null || world === null) return;
 
@@ -434,6 +442,7 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
         nodeView.eventMode = "static";
         nodeView.on("pointerdown", (event) => {
           if (event.button !== 0) return;
+          if (useEditorStore.getState().activeTool === "pan") return;
           event.stopPropagation();
           useEditorStore.getState().selectNode(nodeId);
           startDragRef.current?.(nodeId, nodeView, event);
@@ -461,7 +470,8 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
   }, [activeProfile, application, document, sceneId, selectedNodeId]);
 
   return (
-    <div ref={hostRef} className="scene-canvas">
+    <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`}>
+      <ToolPanel activeTool={activeTool} setActiveTool={setActiveTool} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
           type="button"
@@ -485,11 +495,54 @@ function SceneCanvas({ document, sceneId, activeProfile, selectedNodeId, setActi
   );
 }
 
+function ToolPanel({ activeTool, setActiveTool }: { activeTool: EditorTool; setActiveTool: (tool: EditorTool) => void }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return;
+
+      const toolByKey: Record<string, EditorTool> = { q: "pan", w: "select", e: "resize" };
+      const tool = toolByKey[event.key.toLowerCase()];
+      if (tool !== undefined) setActiveTool(tool);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setActiveTool]);
+
+  const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
+    { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: "Q" },
+    { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: "W" },
+    { tool: "resize", label: "Resize", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4M8 8h8v8H8z" /></svg>, shortcut: "E" },
+  ];
+
+  return (
+    <div className="canvas-tool-mode-group" role="group" aria-label="Viewport tools">
+      {tools.map(({ tool, label, icon, shortcut }) => (
+        <button
+          key={tool}
+          type="button"
+          className={`tool-panel-button${activeTool === tool ? " tool-panel-button-active" : ""}`}
+          title={`${label} (${shortcut})`}
+          aria-label={`${label} (${shortcut})`}
+          aria-pressed={activeTool === tool}
+          onClick={() => setActiveTool(tool)}
+        >
+          {icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function App() {
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
   const activeProfile = useEditorStore((state) => state.activeProfile);
+  const activeTool = useEditorStore((state) => state.activeTool);
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
+  const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
   const addNode = useEditorStore((state) => state.addNode);
   const deleteNode = useEditorStore((state) => state.deleteNode);
@@ -523,7 +576,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} addNode={addNode} />{assetsWindowOpen && <AssetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} activeTool={activeTool} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} />{assetsWindowOpen && <AssetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );

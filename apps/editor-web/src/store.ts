@@ -11,13 +11,16 @@ import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
+export type EditorTool = "pan" | "select" | "resize";
 
 export type EditorState = {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
+  activeTool: EditorTool;
   selectedNodeId: string | null;
   setActiveProfile(profile: LayoutProfileId): void;
+  setActiveTool(tool: EditorTool): void;
   selectNode(id: string | null): void;
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
@@ -70,8 +73,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   document: initialDocument,
   sceneId: initialDocument.scenes[0]?.id ?? firstScene.id,
   activeProfile: "desktop",
+  activeTool: "select",
   selectedNodeId: null,
   setActiveProfile: (profile) => set({ activeProfile: profile }),
+  setActiveTool: (tool) => set({ activeTool: tool }),
   selectNode: (id) => set({ selectedNodeId: id }),
   updateReferenceViewport: (profile, viewport) => set((state) => {
     const candidate = structuredClone(state.document);
