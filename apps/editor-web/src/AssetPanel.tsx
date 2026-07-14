@@ -1,7 +1,9 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import type { Asset } from "@pixi-ui-editor/schema";
 import { resolveAssetUrl } from "./assets.js";
 import { useEditorStore } from "./store.js";
+import { useUiPrefsStore } from "./uiPrefs.js";
+import { FloatingWindow } from "./FloatingWindow.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -30,13 +32,11 @@ export function AssetPanel() {
   const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource);
   const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
 
-  const uploadImage = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file === undefined) return;
-
+  const importImage = (file: File, assetIdToReplace: string | null) => {
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
       console.warn(`Cannot upload '${file.name}': unsupported image type '${file.type || "unknown"}'.`);
       return;
@@ -55,21 +55,48 @@ export function AssetPanel() {
         return;
       }
       const source = { uri: reader.result, mediaType: file.type };
-      if (replaceAssetId === null) addImageAsset(assetNameFromFile(file.name), source);
-      else replaceAssetSource(replaceAssetId, source);
+      if (assetIdToReplace === null) addImageAsset(assetNameFromFile(file.name), source);
+      else replaceAssetSource(assetIdToReplace, source);
       setReplaceAssetId(null);
     });
     reader.addEventListener("error", () => console.warn(`Cannot upload '${file.name}': the image could not be read.`));
     reader.readAsDataURL(file);
   };
 
+  const uploadImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file !== undefined) importImage(file, replaceAssetId);
+  };
+
+  const hasFiles = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes("Files");
+
+  const startDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasFiles(event)) return;
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const leaveDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasFiles(event)) return;
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setIsDragActive(false);
+    }
+  };
+
+  const dropImages = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    [...event.dataTransfer.files].forEach((file) => importImage(file, null));
+  };
+
   return (
-    <section className="asset-panel" aria-labelledby="assets-heading">
-      <div className="asset-panel-heading">
-        <h2 id="assets-heading">Assets</h2>
-        <button type="button" onClick={() => { setReplaceAssetId(null); inputRef.current?.click(); }}>Upload</button>
-        <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadImage} />
-      </div>
+    <section className={`asset-panel${isDragActive ? " asset-panel-drop-active" : ""}`} aria-label="Assets" onDragEnter={startDrop} onDragOver={(event) => event.preventDefault()} onDragLeave={leaveDrop} onDrop={dropImages}>
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadImage} />
+      <p className="asset-panel-drop-hint">Drop PNG, JPEG or WebP files here</p>
       <ul className="asset-list">
         {assets.map((asset) => {
           const usageCount = [...scenes, ...prefabs].flatMap((owner) => owner.nodes)
@@ -92,5 +119,19 @@ export function AssetPanel() {
         })}
       </ul>
     </section>
+  );
+}
+
+export function AssetsWindow() {
+  const position = useUiPrefsStore((state) => state.assetsWindowPosition);
+  const size = useUiPrefsStore((state) => state.assetsWindowSize);
+  const setAssetsWindowOpen = useUiPrefsStore((state) => state.setAssetsWindowOpen);
+  const setAssetsWindowPosition = useUiPrefsStore((state) => state.setAssetsWindowPosition);
+  const setAssetsWindowSize = useUiPrefsStore((state) => state.setAssetsWindowSize);
+
+  return (
+    <FloatingWindow ariaLabel="Assets" className="assets-window" title="Assets" position={position} size={size} minSize={{ width: 240, height: 180 }} onPositionChange={setAssetsWindowPosition} onSizeChange={setAssetsWindowSize} onClose={() => setAssetsWindowOpen(false)}>
+      <AssetPanel />
+    </FloatingWindow>
   );
 }

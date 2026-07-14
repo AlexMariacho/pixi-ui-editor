@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStableId, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./store.js";
+import { loadUiPrefs, UI_PREFS_STORAGE_KEY } from "./uiPrefs.js";
 
 const initialDocument = structuredClone(useEditorStore.getState().document);
 const imageNodeId = "10000000-0000-4000-8000-000000000004";
@@ -12,6 +13,20 @@ afterEach(() => {
     sceneId: initialDocument.scenes[0]!.id,
     activeProfile: "desktop",
     selectedNodeId: null,
+  });
+  vi.unstubAllGlobals();
+});
+
+describe("loadUiPrefs", () => {
+  it("returns defaults without throwing when localStorage contains invalid JSON", () => {
+    const items = new Map<string, string>([[UI_PREFS_STORAGE_KEY, "{"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => items.set(key, value),
+      removeItem: (key: string) => items.delete(key),
+    });
+
+    expect(loadUiPrefs()).toEqual({ assetsWindowOpen: false, assetsWindowPosition: { x: 16, y: 16 }, assetsWindowSize: { width: 280, height: 360 } });
   });
 });
 

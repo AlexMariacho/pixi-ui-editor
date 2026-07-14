@@ -5,7 +5,8 @@ import { Application, Container, Graphics, type FederatedPointerEvent } from "pi
 import { useEditorStore } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneTextures } from "./assets.js";
-import { AssetPanel } from "./AssetPanel.js";
+import { AssetsWindow } from "./AssetPanel.js";
+import { useUiPrefsStore } from "./uiPrefs.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -501,6 +502,8 @@ export function App() {
   const selectedNode = scene.nodes.find((node) => node.id === selectedNodeId);
   const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && scene.rootNodeIds.length === 1);
   const viewport = scene.layout.referenceViewports[activeProfile];
+  const assetsWindowOpen = useUiPrefsStore((state) => state.assetsWindowOpen);
+  const setAssetsWindowOpen = useUiPrefsStore((state) => state.setAssetsWindowOpen);
 
   return (
     <main className="editor-shell">
@@ -513,8 +516,14 @@ export function App() {
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>
-      <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /><AssetPanel /></aside>
-      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} addNode={addNode} /></section>
+      <aside className="panel hierarchy-panel">
+        <h1>Hierarchy</h1>
+        <HierarchyTree scene={scene} selectedNodeId={selectedNodeId} />
+        <div className="hierarchy-assets-action">
+          <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
+        </div>
+      </aside>
+      <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} addNode={addNode} />{assetsWindowOpen && <AssetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );
