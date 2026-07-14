@@ -59,6 +59,9 @@ importers:
 
   packages/runtime-pixi:
     dependencies:
+      '@esotericsoftware/spine-pixi-v8':
+        specifier: ^4.3.10
+        version: 4.3.10(pixi.js@8.19.0)
       '@pixi-ui-editor/schema':
         specifier: workspace:*
         version: link:../schema
@@ -326,6 +329,17 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@esotericsoftware/spine-canvas@4.3.10':
+    resolution: {integrity: sha512-/bonh4XHTEg4lkx5doH3lm118NksP5HORxT1NpoS/8jHmXdI7Fesy3NCJUUKXUHXtx4tIlYOKIJWUaJpqyjD/Q==}
+
+  '@esotericsoftware/spine-core@4.3.10':
+    resolution: {integrity: sha512-cS/tln3klBipdLKx7EBIOh/llwf4F24NX+7p7HOPMZrM7oPj4NEo2YXhLeXnXoX2CJHLWsl2CljlCqBEb0kvRg==}
+
+  '@esotericsoftware/spine-pixi-v8@4.3.10':
+    resolution: {integrity: sha512-byBpI82jIpkZfpYsR2CMz4NUGTvzJ9m3L3Fx5iqQZF7T+ukpe+n9fnPdc7aMjeTtR7Or45iKPU5IbPJwOpvsjQ==}
+    peerDependencies:
+      pixi.js: ^8.16.0
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1116,6 +1130,17 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@esotericsoftware/spine-canvas@4.3.10':
+    dependencies:
+      '@esotericsoftware/spine-core': 4.3.10
+
+  '@esotericsoftware/spine-core@4.3.10': {}
+
+  '@esotericsoftware/spine-pixi-v8@4.3.10(pixi.js@8.19.0)':
+    dependencies:
+      '@esotericsoftware/spine-canvas': 4.3.10
+      pixi.js: 8.19.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

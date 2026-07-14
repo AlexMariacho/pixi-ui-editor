@@ -367,6 +367,8 @@ body { margin: 0; }
 
 .asset-row:hover { background: var(--bg-row-hover); }
 
+.asset-selected { background: rgba(76, 154, 255, 0.18) !important; }
+
 .asset-preview {
   display: flex;
   flex: 0 0 40px;
@@ -477,6 +479,12 @@ body { margin: 0; }
 }
 
 .asset-grid-tile .asset-actions button { min-width: 0; padding: 3px 2px; }
+
+.spine-preview { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px; }
+
+.spine-preview select { margin-left: 6px; max-width: 160px; }
+
+.spine-preview-canvas { display: flex; width: 220px; height: 180px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
 
 /* Inspector */
 

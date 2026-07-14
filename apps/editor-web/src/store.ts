@@ -4,6 +4,7 @@ import {
   serializeProjectDocument,
   validateProjectDocument,
   type LayoutProfileId,
+  type AssetFile,
   type ProjectDocument,
   type UINode,
 } from "@pixi-ui-editor/schema";
@@ -27,10 +28,13 @@ export type EditorState = {
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
+  addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
   setImageNodeAsset(nodeId: string, assetId: string): void;
   replaceAssetSource(assetId: string, source: { uri: string; mediaType: string }): void;
+  replaceSpineAssetFiles(assetId: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
   deleteAsset(assetId: string): void;
-  addNode(type: "container" | "image" | "text"): void;
+  updateSpineNodeAnimation(nodeId: string, animation: string | undefined): void;
+  addNode(type: "container" | "image" | "text" | "spine"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
 };
@@ -154,6 +158,11 @@ export const useEditorStore = create<EditorState>((set) => ({
 
     return commitCandidate(state, candidate, "Image asset creation was rejected because it makes the project document invalid.");
   }),
+  addSpineAsset: (name, files) => set((state) => {
+    const candidate = structuredClone(state.document);
+    candidate.assets.push({ id: createStableId(), name, type: "spine", files: structuredClone(files) });
+    return commitCandidate(state, candidate, "Spine asset creation was rejected because it makes the project document invalid.");
+  }),
   setImageNodeAsset: (nodeId, assetId) => set((state) => {
     const candidate = structuredClone(state.document);
     const scene = candidate.scenes.find((candidateScene) => candidateScene.id === state.sceneId);
@@ -180,14 +189,39 @@ export const useEditorStore = create<EditorState>((set) => ({
       return state;
     }
 
+    if (asset.type !== "image") {
+      console.warn(`Cannot replace image source for asset '${assetId}': it is not an image asset.`);
+      return state;
+    }
     asset.source = { ...source, version: new Date().toISOString() };
     return commitCandidate(state, candidate, "Asset source replacement was rejected because it makes the project document invalid.");
+  }),
+  replaceSpineAssetFiles: (assetId, files) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
+    if (asset?.type !== "spine") {
+      console.warn(`Cannot replace Spine files for asset '${assetId}': it is not a Spine asset.`);
+      return state;
+    }
+    asset.files = structuredClone(files);
+    return commitCandidate(state, candidate, "Spine asset replacement was rejected because it makes the project document invalid.");
   }),
   deleteAsset: (assetId) => set((state) => {
     const candidate = structuredClone(state.document);
     candidate.assets = candidate.assets.filter((asset) => asset.id !== assetId);
 
     return commitCandidate(state, candidate, "Asset deletion was rejected because it makes the project document invalid.");
+  }),
+  updateSpineNodeAnimation: (nodeId, animation) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = candidate.scenes.find((scene) => scene.id === state.sceneId)?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (node?.type !== "spine") {
+      console.warn(`Cannot update Spine animation for node '${nodeId}': it is not a Spine node.`);
+      return state;
+    }
+    if (animation === undefined) delete node.animation;
+    else node.animation = animation;
+    return commitCandidate(state, candidate, "Spine animation update was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -207,7 +241,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       (count, candidateScene) => count + candidateScene.nodes.filter((node) => node.type === type).length,
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
     ) + 1;
-    const transform = { x: 50, y: 50, width: 100, height: 100, scaleX: 1, scaleY: 1, rotation: 0 };
+    const transform = { x: 50, y: 50, width: type === "spine" ? 200 : 100, height: type === "spine" ? 200 : 100, scaleX: 1, scaleY: 1, rotation: 0 };
     const base = {
       id: createStableId(),
       name: `${type[0]!.toUpperCase()}${type.slice(1)} ${nodeNumber}`,
@@ -222,6 +256,13 @@ export const useEditorStore = create<EditorState>((set) => ({
       const asset = candidate.assets.find((candidateAsset) => candidateAsset.type === "image");
       if (asset === undefined) {
         console.warn("Cannot add an image node: the project document does not contain an image asset.");
+        return state;
+      }
+      node = { ...base, type, assetId: asset.id };
+    } else if (type === "spine") {
+      const asset = candidate.assets.find((candidateAsset) => candidateAsset.type === "spine");
+      if (asset === undefined) {
+        console.warn("Cannot add a Spine node: the project document does not contain a Spine asset.");
         return state;
       }
       node = { ...base, type, assetId: asset.id };

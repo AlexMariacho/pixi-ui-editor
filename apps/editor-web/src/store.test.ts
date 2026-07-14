@@ -66,6 +66,23 @@ describe("addImageAsset", () => {
   });
 });
 
+describe("Spine assets and nodes", () => {
+  it("creates a Spine asset, node, and persisted animation selection", () => {
+    useEditorStore.getState().addSpineAsset("Hero", {
+      skeleton: { name: "hero.json", uri: "data:application/json;base64,e30=", mediaType: "application/json" },
+      atlas: { name: "hero.atlas", uri: "data:text/plain;base64,", mediaType: "text/plain" },
+      textures: [{ name: "hero.png", uri: "data:image/png;base64,AAAA", mediaType: "image/png" }],
+    });
+    const asset = useEditorStore.getState().document.assets.at(-1)!;
+    useEditorStore.getState().addNode("spine");
+    const node = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
+    expect(node).toMatchObject({ type: "spine", assetId: asset.id, transform: { width: 200, height: 200 } });
+    useEditorStore.getState().updateSpineNodeAnimation(node.id, "idle");
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.at(-1)).toMatchObject({ animation: "idle" });
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+});
+
 describe("setImageNodeAsset", () => {
   it("changes Logo to an existing image asset and rejects a missing asset", () => {
     useEditorStore.getState().addImageAsset("Uploaded", { uri: "data:image/png;base64,AAAA", mediaType: "image/png" });

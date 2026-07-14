@@ -4,7 +4,7 @@ import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/s
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore, type EditorTool } from "./store.js";
 import { Inspector } from "./Inspector.js";
-import { loadEditorSceneTextures } from "./assets.js";
+import { loadEditorSceneSpines, loadEditorSceneTextures } from "./assets.js";
 import { AssetsWindow } from "./AssetPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
 
@@ -237,7 +237,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
   selectedNodeId: string | null;
   setActiveProfile: (profile: LayoutProfileId) => void;
   setActiveTool: (tool: EditorTool) => void;
-  addNode: (type: "container" | "image" | "text") => void;
+  addNode: (type: "container" | "image" | "text" | "spine") => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<Container | null>(null);
@@ -545,10 +545,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
 
     let cancelled = false;
 
-    void loadEditorSceneTextures(document, sceneId).then((textures) => {
+    void Promise.all([loadEditorSceneTextures(document, sceneId), loadEditorSceneSpines(document, sceneId)]).then(([textures, spines]) => {
       if (cancelled) return;
 
-      const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile, textures);
+      const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile, textures, spines);
       for (const [nodeId, nodeView] of nodeViews) {
         nodeView.eventMode = "static";
         nodeView.on("pointerdown", (event) => {
@@ -597,6 +597,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
         <button type="button" onClick={() => addNode("container")}>+ Container</button>
         <button type="button" onClick={() => addNode("image")}>+ Image</button>
         <button type="button" onClick={() => addNode("text")}>+ Text</button>
+        <button type="button" disabled={!document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
       </div>
       <div className="canvas-hud">
         <button type="button" onClick={() => fitCameraRef.current?.()}>Fit</button>

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { serializeProjectDocument } from "@pixi-ui-editor/schema";
 import { Sprite, Texture } from "pixi.js";
-import { buildSceneView, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
+import { TextureAtlas } from "@esotericsoftware/spine-pixi-v8";
+import { assignAtlasPageTextures, buildSceneView, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -16,6 +17,11 @@ const ids = {
 const clone = <T>(value: T): T => structuredClone(value);
 
 describe("sample project loader smoke test", () => {
+  it("matches atlas pages to texture files by name", () => {
+    const atlas = new TextureAtlas("second.png\nsize: 1,1\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\n\nfirst.png\nsize: 1,1\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\n");
+    assignAtlasPageTextures(atlas, new Map([["first.png", Texture.WHITE], ["second.png", Texture.WHITE]]));
+    expect(atlas.pages.every((page) => page.texture !== null)).toBe(true);
+  });
   it("resolves base transforms, partial desktop overrides, and profile visibility", () => {
     const document = parseProjectDocumentJson(sampleJson);
     const node = document.scenes[0]!.nodes[1]!;

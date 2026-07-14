@@ -1,8 +1,9 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { UINode } from "@pixi-ui-editor/schema";
-import { resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
+import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { useEditorStore } from "./store.js";
+import { loadEditorSceneSpines } from "./assets.js";
 
 type InspectorWindowProps = {
   title: string;
@@ -119,6 +120,22 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
   const updateNodeProfileTransform = useEditorStore((state) => state.updateNodeProfileTransform);
   const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
   const setImageNodeAsset = useEditorStore((state) => state.setImageNodeAsset);
+  const updateSpineNodeAnimation = useEditorStore((state) => state.updateSpineNodeAnimation);
+  const document = useEditorStore((state) => state.document);
+  const sceneId = useEditorStore((state) => state.sceneId);
+  const [spineData, setSpineData] = useState<SkeletonData | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedNode?.type !== "spine") {
+      setSpineData(undefined);
+      return () => { cancelled = true; };
+    }
+    void loadEditorSceneSpines(document, sceneId).then((spines) => {
+      if (!cancelled) setSpineData(spines.get(selectedNode.assetId));
+    });
+    return () => { cancelled = true; };
+  }, [document, sceneId, selectedNode]);
 
   if (selectedNode === undefined) return <p className="inspector-empty">Select a node</p>;
 
@@ -142,6 +159,14 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="Asset">
         <select value={selectedNode.assetId} onChange={(event) => setImageNodeAsset(selectedNode.id, event.target.value)}>
           {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+        </select>
+      </InspectorField>
+    </InspectorWindow>}
+    {selectedNode.type === "spine" && <InspectorWindow title="Spine">
+      <InspectorField label="Animation">
+        <select value={selectedNode.animation ?? ""} disabled={spineData === undefined} onChange={(event) => updateSpineNodeAnimation(selectedNode.id, event.target.value || undefined)}>
+          <option value="">(none)</option>
+          {spineData?.animations.map((animation) => <option key={animation.name} value={animation.name}>{animation.name}</option>)}
         </select>
       </InspectorField>
     </InspectorWindow>}
