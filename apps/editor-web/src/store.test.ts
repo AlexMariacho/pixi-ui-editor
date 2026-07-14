@@ -31,6 +31,26 @@ describe("addNode", () => {
   });
 });
 
+describe("addImageAsset", () => {
+  it("adds a valid uploaded asset and rejects an asset with an empty URI", () => {
+    useEditorStore.getState().addImageAsset("Uploaded", { uri: "data:image/png;base64,AAAA", mediaType: "image/png" });
+
+    expect(useEditorStore.getState().document.assets).toContainEqual(expect.objectContaining({
+      name: "Uploaded",
+      type: "image",
+      source: { uri: "data:image/png;base64,AAAA", mediaType: "image/png" },
+    }));
+
+    const beforeInvalidAsset = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useEditorStore.getState().addImageAsset("Invalid", { uri: "", mediaType: "image/png" });
+
+    expect(useEditorStore.getState().document).toEqual(beforeInvalidAsset);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe("deleteNode", () => {
   it("deletes an entire subtree from both nodes and parent children", () => {
     const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;

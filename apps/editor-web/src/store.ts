@@ -23,6 +23,7 @@ export type EditorState = {
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
+  addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   addNode(type: "container" | "image" | "text"): void;
   deleteNode(nodeId: string): void;
   resetToSample(): void;
@@ -138,6 +139,12 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     return commitCandidate(state, candidate, "Node orientation visibility update was rejected because it makes the project document invalid.");
+  }),
+  addImageAsset: (name, source) => set((state) => {
+    const candidate = structuredClone(state.document);
+    candidate.assets.push({ id: createStableId(), name, type: "image", source: { ...source } });
+
+    return commitCandidate(state, candidate, "Image asset creation was rejected because it makes the project document invalid.");
   }),
   addNode: (type) => set((state) => {
     const candidate = structuredClone(state.document);

@@ -5,6 +5,7 @@ import { Application, Container, Graphics, type FederatedPointerEvent } from "pi
 import { useEditorStore } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneTextures } from "./assets.js";
+import { AssetPanel } from "./AssetPanel.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -512,7 +513,7 @@ export function App() {
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>
-      <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /></aside>
+      <aside className="panel hierarchy-panel"><h1>Hierarchy</h1><HierarchyTree scene={scene} selectedNodeId={selectedNodeId} /><AssetPanel /></aside>
       <section className="canvas-panel"><SceneCanvas document={document} sceneId={sceneId} activeProfile={activeProfile} selectedNodeId={selectedNodeId} setActiveProfile={setActiveProfile} addNode={addNode} /></section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
