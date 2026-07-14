@@ -4,20 +4,24 @@ export const UI_PREFS_STORAGE_KEY = "pixi-ui-editor:ui-prefs";
 
 export type AssetsWindowPosition = { x: number; y: number };
 export type AssetsWindowSize = { width: number; height: number };
+export type AssetsViewMode = "list" | "compact" | "grid";
 
 export type UiPrefsState = {
   assetsWindowOpen: boolean;
   assetsWindowPosition: AssetsWindowPosition;
   assetsWindowSize: AssetsWindowSize;
+  assetsViewMode: AssetsViewMode;
   setAssetsWindowOpen(open: boolean): void;
   setAssetsWindowPosition(position: AssetsWindowPosition): void;
   setAssetsWindowSize(size: AssetsWindowSize): void;
+  setAssetsViewMode(mode: AssetsViewMode): void;
 };
 
 const defaults = {
   assetsWindowOpen: false,
   assetsWindowPosition: { x: 16, y: 16 },
   assetsWindowSize: { width: 280, height: 360 },
+  assetsViewMode: "list" as AssetsViewMode,
 };
 
 function isPosition(value: unknown): value is AssetsWindowPosition {
@@ -34,7 +38,7 @@ function isSize(value: unknown): value is AssetsWindowSize {
     && typeof size.height === "number" && Number.isFinite(size.height) && size.height > 0;
 }
 
-export function loadUiPrefs(): Pick<UiPrefsState, "assetsWindowOpen" | "assetsWindowPosition" | "assetsWindowSize"> {
+export function loadUiPrefs(): Pick<UiPrefsState, "assetsWindowOpen" | "assetsWindowPosition" | "assetsWindowSize" | "assetsViewMode"> {
   if (typeof localStorage === "undefined") return structuredClone(defaults);
 
   const storedPrefs = localStorage.getItem(UI_PREFS_STORAGE_KEY);
@@ -49,6 +53,7 @@ export function loadUiPrefs(): Pick<UiPrefsState, "assetsWindowOpen" | "assetsWi
       assetsWindowOpen: prefs.assetsWindowOpen,
       assetsWindowPosition: { ...prefs.assetsWindowPosition },
       assetsWindowSize: isSize(prefs.assetsWindowSize) ? { ...prefs.assetsWindowSize } : { ...defaults.assetsWindowSize },
+      assetsViewMode: prefs.assetsViewMode === "grid" || prefs.assetsViewMode === "compact" ? prefs.assetsViewMode : "list",
     };
   } catch {
     return structuredClone(defaults);
@@ -62,6 +67,7 @@ export const useUiPrefsStore = create<UiPrefsState>((set) => ({
   setAssetsWindowOpen: (assetsWindowOpen) => set({ assetsWindowOpen }),
   setAssetsWindowPosition: (assetsWindowPosition) => set({ assetsWindowPosition }),
   setAssetsWindowSize: (assetsWindowSize) => set({ assetsWindowSize }),
+  setAssetsViewMode: (assetsViewMode) => set({ assetsViewMode }),
 }));
 
 useUiPrefsStore.subscribe((state) => {
@@ -72,6 +78,7 @@ useUiPrefsStore.subscribe((state) => {
       assetsWindowOpen: state.assetsWindowOpen,
       assetsWindowPosition: state.assetsWindowPosition,
       assetsWindowSize: state.assetsWindowSize,
+      assetsViewMode: state.assetsViewMode,
     }));
   } catch (error) {
     console.warn("The editor UI preferences could not be saved to localStorage.", error);

@@ -18,6 +18,7 @@ type FloatingWindowProps = {
   position: FloatingWindowPosition;
   size: FloatingWindowSize;
   title: string;
+  titleActions?: ReactNode;
 };
 
 export function FloatingWindow({
@@ -31,6 +32,7 @@ export function FloatingWindow({
   position,
   size,
   title,
+  titleActions,
 }: FloatingWindowProps) {
   const windowRef = useRef<HTMLElement>(null);
 
@@ -96,6 +98,7 @@ export function FloatingWindow({
     <section ref={windowRef} className={`floating-window ${className}`.trim()} aria-label={ariaLabel} style={{ left: position.x, top: position.y, width: size.width, height: size.height }} onPointerDown={startResizeFromEdge}>
       <div className="floating-window-titlebar" onPointerDown={startDrag}>
         <h2>{title}</h2>
+        {titleActions}
         <button type="button" aria-label={`Close ${title}`} onClick={onClose}>×</button>
       </div>
       <div className="floating-window-content">{children}</div>

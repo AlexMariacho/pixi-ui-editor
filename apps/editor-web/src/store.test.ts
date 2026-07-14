@@ -26,7 +26,7 @@ describe("loadUiPrefs", () => {
       removeItem: (key: string) => items.delete(key),
     });
 
-    expect(loadUiPrefs()).toEqual({ assetsWindowOpen: false, assetsWindowPosition: { x: 16, y: 16 }, assetsWindowSize: { width: 280, height: 360 } });
+    expect(loadUiPrefs()).toEqual({ assetsWindowOpen: false, assetsWindowPosition: { x: 16, y: 16 }, assetsWindowSize: { width: 280, height: 360 }, assetsViewMode: "list" });
   });
 });
 
