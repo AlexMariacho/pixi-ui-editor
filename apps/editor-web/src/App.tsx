@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { buildSceneView } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import { useEditorStore, type EditorTool } from "./store.js";
@@ -14,6 +14,21 @@ const ARTBOARD_BORDER = 0x3c3c50;
 const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
+
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+const RESIZE_HANDLES: readonly { handle: ResizeHandle; x: number; y: number; cursor: string }[] = [
+  { handle: "nw", x: 0, y: 0, cursor: "nwse-resize" },
+  { handle: "n", x: 0.5, y: 0, cursor: "ns-resize" },
+  { handle: "ne", x: 1, y: 0, cursor: "nesw-resize" },
+  { handle: "e", x: 1, y: 0.5, cursor: "ew-resize" },
+  { handle: "se", x: 1, y: 1, cursor: "nwse-resize" },
+  { handle: "s", x: 0.5, y: 1, cursor: "ns-resize" },
+  { handle: "sw", x: 0, y: 1, cursor: "nesw-resize" },
+  { handle: "w", x: 0, y: 0.5, cursor: "ew-resize" },
+];
+
+const roundTransformValue = (value: number) => Math.round(value * 100) / 100;
 
 type ScreenPreset = { label: string; width: number; height: number };
 
@@ -230,6 +245,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
   const selectionGraphicsRef = useRef<Graphics | null>(null);
+  const resizeHandlesRef = useRef<Container | null>(null);
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
   const cameraFittedRef = useRef(false);
   const renderedProfileRef = useRef<LayoutProfileId | null>(null);
@@ -239,7 +255,17 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     offsetX: number;
     offsetY: number;
   } | null>(null);
+  const resizeDragRef = useRef<{
+    handle: ResizeHandle;
+    nodeId: string;
+    startX: number;
+    startY: number;
+    transform: UINode["transform"];
+    scaleX: number;
+    scaleY: number;
+  } | null>(null);
   const startDragRef = useRef<((nodeId: string, nodeView: Container, event: FederatedPointerEvent) => void) | null>(null);
+  const startResizeRef = useRef<((handle: ResizeHandle, event: FederatedPointerEvent) => void) | null>(null);
   const [application, setApplication] = useState<Application | null>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -248,14 +274,29 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
     if (selectionGraphics === null) return;
 
     selectionGraphics.clear();
+    const resizeHandles = resizeHandlesRef.current;
+    resizeHandles?.removeChildren().forEach((child) => child.destroy());
     const nodeId = useEditorStore.getState().selectedNodeId;
     if (nodeId === null) return;
 
     const nodeView = nodeViewsRef.current.get(nodeId);
     if (nodeView === undefined || nodeView.destroyed) return;
+    if (!nodeView.visible) return;
 
     const bounds = nodeView.getBounds();
     selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
+
+    if (resizeHandles === null) return;
+    if (useEditorStore.getState().activeTool !== "resize") return;
+
+    for (const { handle, x, y, cursor } of RESIZE_HANDLES) {
+      const control = new Graphics().rect(-5, -5, 10, 10).fill(0xffffff).stroke({ width: 1.5, color: SELECTION_COLOR });
+      control.position.set(bounds.x + bounds.width * x, bounds.y + bounds.height * y);
+      control.eventMode = "static";
+      control.cursor = cursor;
+      control.on("pointerdown", (event) => startResizeRef.current?.(handle, event));
+      resizeHandles.addChild(control);
+    }
   });
 
   useEffect(() => {
@@ -280,7 +321,9 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       overlay.eventMode = "none";
       const selectionGraphics = new Graphics();
       overlay.addChild(selectionGraphics);
-      application.stage.addChild(world, overlay);
+      const resizeHandles = new Container();
+      resizeHandles.eventMode = "static";
+      application.stage.addChild(world, overlay, resizeHandles);
       application.stage.eventMode = "static";
       application.stage.hitArea = application.screen;
       application.stage.on("pointerdown", (event) => {
@@ -393,9 +436,76 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
         application.stage.on("pointerupoutside", stopDrag);
       };
 
+      const stopResize = () => {
+        resizeDragRef.current = null;
+        application.stage.off("pointermove", moveResizedNode);
+        application.stage.off("pointerup", stopResize);
+        application.stage.off("pointerupoutside", stopResize);
+      };
+      const moveResizedNode = (event: FederatedPointerEvent) => {
+        const drag = resizeDragRef.current;
+        if (drag === null) return;
+
+        // Each commit rebuilds the scene, so resolve the current view before each calculation.
+        const nodeView = nodeViewsRef.current.get(drag.nodeId);
+        const parentView = nodeView?.parent;
+        if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
+
+        const position = parentView.toLocal(event.global);
+        const deltaX = position.x - drag.startX;
+        const deltaY = position.y - drag.startY;
+        const patch: Partial<UINode["transform"]> = {};
+
+        if (drag.handle.includes("e")) patch.width = Math.max(1, drag.transform.width + deltaX / drag.scaleX);
+        if (drag.handle.includes("w")) {
+          const width = Math.max(1, drag.transform.width - deltaX / drag.scaleX);
+          patch.width = width;
+          patch.x = drag.transform.x + (drag.transform.width - width) * drag.scaleX;
+        }
+        if (drag.handle.includes("s")) patch.height = Math.max(1, drag.transform.height + deltaY / drag.scaleY);
+        if (drag.handle.includes("n")) {
+          const height = Math.max(1, drag.transform.height - deltaY / drag.scaleY);
+          patch.height = height;
+          patch.y = drag.transform.y + (drag.transform.height - height) * drag.scaleY;
+        }
+
+        for (const key of Object.keys(patch) as (keyof UINode["transform"])[]) {
+          patch[key] = roundTransformValue(patch[key]!);
+        }
+        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, patch);
+      };
+      startResizeRef.current = (handle, event) => {
+        const state = useEditorStore.getState();
+        const nodeId = state.selectedNodeId;
+        if (nodeId === null) return;
+        const node = state.document.scenes
+          .find((scene) => scene.id === state.sceneId)
+          ?.nodes.find((candidate) => candidate.id === nodeId);
+        const nodeView = nodeViewsRef.current.get(nodeId);
+        const parentView = nodeView?.parent;
+        if (node === undefined || nodeView === undefined || parentView === null || parentView === undefined) return;
+
+        event.stopPropagation();
+        const position = parentView.toLocal(event.global);
+        const transform = resolveProfileTransform(node, state.activeProfile).transform;
+        resizeDragRef.current = {
+          handle,
+          nodeId,
+          startX: position.x,
+          startY: position.y,
+          transform: { ...transform },
+          scaleX: nodeView.width / transform.width,
+          scaleY: nodeView.height / transform.height,
+        };
+        application.stage.on("pointermove", moveResizedNode);
+        application.stage.on("pointerup", stopResize);
+        application.stage.on("pointerupoutside", stopResize);
+      };
+
       worldRef.current = world;
       artboardRef.current = artboard;
       selectionGraphicsRef.current = selectionGraphics;
+      resizeHandlesRef.current = resizeHandles;
       setApplication(application);
     });
 
@@ -407,6 +517,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
       sceneRootRef.current = null;
       nodeViewsRef.current = new Map();
       selectionGraphicsRef.current = null;
+      resizeHandlesRef.current = null;
       fitCameraRef.current = null;
       cameraFittedRef.current = false;
       if (initialized) application.destroy(true);
@@ -467,7 +578,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, selectedNod
 
   useEffect(() => {
     redrawSelectionRef.current();
-  }, [activeProfile, application, document, sceneId, selectedNodeId]);
+  }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId]);
 
   return (
     <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`}>
