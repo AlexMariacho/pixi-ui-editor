@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "editor-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@pixi-ui-editor/editor-web", "dev"],
+      "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "editor-web-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@pixi-ui-editor/editor-web", "preview", "--port", "4181", "--strictPort"],
+      "port": 4181
+    }
+  ]
+}
