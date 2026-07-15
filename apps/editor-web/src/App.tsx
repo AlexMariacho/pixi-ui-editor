@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
+import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
-import { getEditingTarget, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
+import { getEditingTarget, getSceneRoot, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures, resolveFileUrl } from "./assets.js";
 import { downloadProjectPackage } from "./exportPackage.js";
@@ -16,6 +16,9 @@ const ARTBOARD_BORDER = 0x3c3c50;
 const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
+const EMPTY_CONTAINER_GIZMO_SIZE = 100;
+
+type CanvasBounds = { x: number; y: number; width: number; height: number };
 
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -29,6 +32,33 @@ const RESIZE_HANDLES: readonly { handle: ResizeHandle; x: number; y: number; cur
   { handle: "sw", x: 0, y: 1, cursor: "nesw-resize" },
   { handle: "w", x: 0, y: 0.5, cursor: "ew-resize" },
 ];
+
+function nodeRectBounds(nodeView: Container, width: number, height: number): CanvasBounds {
+  const matrix = nodeView.getGlobalTransform();
+  const corners = [
+    { x: matrix.tx, y: matrix.ty },
+    { x: matrix.a * width + matrix.tx, y: matrix.b * width + matrix.ty },
+    { x: matrix.c * height + matrix.tx, y: matrix.d * height + matrix.ty },
+    {
+      x: matrix.a * width + matrix.c * height + matrix.tx,
+      y: matrix.b * width + matrix.d * height + matrix.ty,
+    },
+  ];
+  const left = Math.min(...corners.map((corner) => corner.x));
+  const top = Math.min(...corners.map((corner) => corner.y));
+  const right = Math.max(...corners.map((corner) => corner.x));
+  const bottom = Math.max(...corners.map((corner) => corner.y));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function unionBounds(bounds: readonly CanvasBounds[]): CanvasBounds | undefined {
+  if (bounds.length === 0) return undefined;
+  const left = Math.min(...bounds.map((candidate) => candidate.x));
+  const top = Math.min(...bounds.map((candidate) => candidate.y));
+  const right = Math.max(...bounds.map((candidate) => candidate.x + candidate.width));
+  const bottom = Math.max(...bounds.map((candidate) => candidate.y + candidate.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
 
 const roundTransformValue = (value: number) => Math.round(value * 100) / 100;
 
@@ -271,9 +301,58 @@ function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocu
   );
 }
 
-function HierarchyTree({ owner, selectedNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeId: string | null }) {
+type HierarchyDropMode = "before" | "inside" | "after";
+
+function HierarchyTree({ owner, selectedNodeId, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeId: string | null; implicitRootNodeId?: string }) {
   const selectNode = useEditorStore((state) => state.selectNode);
+  const moveNode = useEditorStore((state) => state.moveNode);
+  const draggedNodeIdRef = useRef<string | null>(null);
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ nodeId: string | null; mode: HierarchyDropMode | "root" } | null>(null);
   const nodesById = new Map<string, UINode>(owner.nodes.map((node) => [node.id, node]));
+  const implicitRoot = implicitRootNodeId === undefined ? undefined : nodesById.get(implicitRootNodeId);
+  const visibleRootNodeIds = implicitRoot === undefined
+    ? owner.rootNodeIds
+    : [...implicitRoot.children, ...owner.rootNodeIds.filter((nodeId) => nodeId !== implicitRoot.id)];
+
+  const isDescendantOf = (candidateId: string, ancestorId: string): boolean => {
+    let current = nodesById.get(candidateId);
+    while (current?.parentId !== null && current?.parentId !== undefined) {
+      if (current.parentId === ancestorId) return true;
+      current = nodesById.get(current.parentId);
+    }
+    return false;
+  };
+
+  const canDrop = (sourceId: string, targetNode: UINode, mode: HierarchyDropMode): boolean => {
+    if (sourceId === targetNode.id) return false;
+    const parentId = mode === "inside" ? targetNode.id : targetNode.parentId;
+    return parentId === null || (parentId !== sourceId && !isDescendantOf(parentId, sourceId));
+  };
+
+  const finishDrag = (): void => {
+    draggedNodeIdRef.current = null;
+    setDraggedNodeId(null);
+    setDropTarget(null);
+  };
+
+  const dropOnNode = (event: DragEvent<HTMLButtonElement>, targetNode: UINode, mode: HierarchyDropMode): void => {
+    const sourceId = event.dataTransfer.getData(NODE_DRAG_TYPE) || draggedNodeId;
+    if (sourceId === null || !canDrop(sourceId, targetNode, mode)) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (mode === "inside") {
+      moveNode(sourceId, { parentId: targetNode.id, index: targetNode.children.length });
+    } else {
+      const siblings = targetNode.parentId === null
+        ? owner.rootNodeIds
+        : nodesById.get(targetNode.parentId)?.children ?? [];
+      const targetIndex = siblings.indexOf(targetNode.id);
+      moveNode(sourceId, { parentId: targetNode.parentId, index: targetIndex + (mode === "after" ? 1 : 0) });
+    }
+    finishDrag();
+  };
 
   const renderNode = (nodeId: string, depth: number): ReactNode => {
     const node = nodesById.get(nodeId);
@@ -283,12 +362,36 @@ function HierarchyTree({ owner, selectedNodeId }: { owner: { rootNodeIds: string
       <li key={node.id}>
         <button
           type="button"
-          className={`tree-node${node.id === selectedNodeId ? " tree-node-selected" : ""}`}
+          className={`tree-node${node.id === selectedNodeId ? " tree-node-selected" : ""}${dropTarget?.nodeId === node.id ? ` tree-node-drop-${dropTarget.mode}` : ""}`}
           style={{ paddingInlineStart: `${depth * 16 + 12}px` }}
           draggable
+          title="Drag to reorder or make this node a child of another node"
           onDragStart={(event) => {
             event.dataTransfer.setData(NODE_DRAG_TYPE, node.id);
-            event.dataTransfer.effectAllowed = "copy";
+            event.dataTransfer.effectAllowed = "copyMove";
+            draggedNodeIdRef.current = node.id;
+            setDraggedNodeId(node.id);
+            setDropTarget(null);
+          }}
+          onDragEnd={finishDrag}
+          onDragOver={(event) => {
+            const sourceId = draggedNodeIdRef.current;
+            if (sourceId === null) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const ratio = (event.clientY - bounds.top) / bounds.height;
+            const mode: HierarchyDropMode = ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
+            if (!canDrop(sourceId, node, mode)) {
+              event.dataTransfer.dropEffect = "none";
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            setDropTarget({ nodeId: node.id, mode });
+          }}
+          onDrop={(event) => {
+            const mode = dropTarget?.nodeId === node.id && dropTarget.mode !== "root" ? dropTarget.mode : "inside";
+            dropOnNode(event, node, mode);
           }}
           onClick={() => selectNode(node.id)}
         >
@@ -299,7 +402,64 @@ function HierarchyTree({ owner, selectedNodeId }: { owner: { rootNodeIds: string
     );
   };
 
-  return <ul className="tree">{owner.rootNodeIds.map((nodeId) => renderNode(nodeId, 0))}</ul>;
+  return (
+    <ul className="tree">
+      {visibleRootNodeIds.map((nodeId) => renderNode(nodeId, 0))}
+      {draggedNodeId !== null && (
+        <li
+          className={`tree-root-drop-zone${dropTarget?.mode === "root" ? " tree-root-drop-zone-active" : ""}`}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            setDropTarget({ nodeId: null, mode: "root" });
+          }}
+          onDrop={(event) => {
+            const sourceId = event.dataTransfer.getData(NODE_DRAG_TYPE) || draggedNodeId;
+            event.preventDefault();
+            event.stopPropagation();
+            moveNode(sourceId, {
+              parentId: implicitRoot?.id ?? null,
+              index: implicitRoot?.children.length ?? owner.rootNodeIds.length,
+            });
+            finishDrag();
+          }}
+        >
+          Move to top level
+        </li>
+      )}
+    </ul>
+  );
+}
+
+// Структурный ключ сцены: Pixi-дерево пересобирается, только когда меняется он.
+// Transform, visibility и text не входят в ключ — они применяются к живым view через updateNodeView.
+function nodeStructure(node: UINode): unknown[] {
+  switch (node.type) {
+    case "image":
+      return [node.id, node.parentId, node.children, node.type, node.assetId];
+    case "spine":
+      return [node.id, node.parentId, node.children, node.type, node.assetId, node.animation, node.loop];
+    case "prefab-instance":
+      return [node.id, node.parentId, node.children, node.type, node.prefabId];
+    default:
+      return [node.id, node.parentId, node.children, node.type];
+  }
+}
+
+function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMode: ViewMode): string {
+  // Map рендерит все сцены с запечёнными transform, поэтому там любой коммит остаётся полной пересборкой.
+  if (viewMode === "map") return JSON.stringify({ mode: "map", scenes: document.scenes, assets: document.assets, prefabs: document.prefabs });
+
+  const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+  return JSON.stringify({
+    mode: "single",
+    scene: scene === undefined ? null : { id: scene.id, roots: scene.rootNodeIds, layout: scene.layout, nodes: scene.nodes.map(nodeStructure) },
+    assets: document.assets,
+    // Редактируемый пресет отображается собственной синтетической сценой (id пресета = id сцены),
+    // поэтому его определение из ключа исключается — иначе каждый его коммит пересобирал бы сцену.
+    prefabs: document.prefabs.filter((prefab) => prefab.id !== sceneId),
+  });
 }
 
 function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
@@ -337,8 +497,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     nodeId: string;
     offsetX: number;
     offsetY: number;
+    startX: number;
+    startY: number;
     x: number;
     y: number;
+    pivotX: number;
+    pivotY: number;
   } | null>(null);
   const resizeDragRef = useRef<{
     handle: ResizeHandle;
@@ -358,6 +522,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   const startResizeRef = useRef<((handle: ResizeHandle, event: FederatedPointerEvent) => void) | null>(null);
   const [application, setApplication] = useState<Application | null>(null);
   const [zoom, setZoom] = useState(1);
+  // Актуальный документ для асинхронной пересборки: она может завершиться позже очередного нестуктурного коммита.
+  const documentRef = useRef(document);
+  documentRef.current = document;
+  const structuralKey = useMemo(() => computeStructuralKey(document, sceneId, viewMode), [document, sceneId, viewMode]);
 
   const redrawSelectionRef = useRef<() => void>(() => {
     const selectionGraphics = selectionGraphicsRef.current;
@@ -373,10 +541,58 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     if (nodeView === undefined || nodeView.destroyed) return;
     if (!nodeView.visible) return;
 
-    const bounds = nodeView.getBounds();
+    const editorState = useEditorStore.getState();
+    const owner = getEditingTarget(editorState.document, editorState);
+    if (owner === undefined) return;
+    const node = owner.nodes.find((candidate) => candidate.id === nodeId);
+    if (node === undefined) return;
+
+    const nodesById = new Map(owner.nodes.map((candidate) => [candidate.id, candidate]));
+    const collectContainerContentBounds = (container: UINode): CanvasBounds[] => container.children.flatMap((childId) => {
+      const child = nodesById.get(childId);
+      const childView = nodeViewsRef.current.get(childId);
+      if (child === undefined || childView === undefined || childView.destroyed || !childView.visible) return [];
+      if (child.type === "container") {
+        const nestedBounds = collectContainerContentBounds(child);
+        return nestedBounds.length > 0
+          ? nestedBounds
+          : [nodeRectBounds(childView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)];
+      }
+      const childTransform = resolveProfileTransform(child, editorState.activeProfile).transform;
+      return [nodeRectBounds(childView, childTransform.width, childTransform.height)];
+    });
+
+    const { transform } = resolveProfileTransform(node, editorState.activeProfile);
+    const bounds = node.type === "container"
+      ? unionBounds(collectContainerContentBounds(node))
+        ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
+      : nodeRectBounds(nodeView, transform.width, transform.height);
     selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
 
     if (resizeHandles === null) return;
+    if (node.type === "container") {
+      const matrix = nodeView.getGlobalTransform();
+      selectionGraphics
+        .circle(matrix.tx, matrix.ty, 4)
+        .stroke({ width: 1.5, color: 0xffffff });
+      const moveHandle = new Graphics()
+        .circle(0, 0, 8)
+        .fill(SELECTION_COLOR)
+        .stroke({ width: 1.5, color: 0xffffff })
+        .moveTo(-4, 0).lineTo(4, 0)
+        .moveTo(0, -4).lineTo(0, 4)
+        .stroke({ width: 1.5, color: 0xffffff });
+      moveHandle.position.set(bounds.x, bounds.y);
+      moveHandle.eventMode = editorState.activeTool === "pan" ? "none" : "static";
+      moveHandle.cursor = "move";
+      moveHandle.on("pointerdown", (event) => {
+        if (event.button !== 0 || useEditorStore.getState().activeTool === "pan") return;
+        event.stopPropagation();
+        startDragRef.current?.(node.id, nodeView, event);
+      });
+      resizeHandles.addChild(moveHandle);
+      return;
+    }
     if (useEditorStore.getState().activeTool !== "resize") return;
 
     for (const { handle, x, y, cursor } of RESIZE_HANDLES) {
@@ -497,7 +713,9 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         application.stage.off("pointermove", moveDraggedNode);
         application.stage.off("pointerup", stopDrag);
         application.stage.off("pointerupoutside", stopDrag);
-        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, { x: drag.x, y: drag.y });
+        // Клик без перемещения не коммитит документ — иначе каждое выделение дергало бы store и подписчиков.
+        // drag.x/y — это view.position (= transform.x + pivot-офсет), поэтому перед коммитом офсет вычитаем.
+        if (drag.x !== drag.startX || drag.y !== drag.startY) useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, { x: drag.x - drag.pivotX, y: drag.y - drag.pivotY });
       };
       const moveDraggedNode = (event: FederatedPointerEvent) => {
         const drag = dragRef.current;
@@ -524,8 +742,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
           nodeId,
           offsetX: localPosition.x - nodeView.position.x,
           offsetY: localPosition.y - nodeView.position.y,
+          startX: nodeView.position.x,
+          startY: nodeView.position.y,
           x: nodeView.position.x,
           y: nodeView.position.y,
+          pivotX: nodeView.pivot.x,
+          pivotY: nodeView.pivot.y,
         };
         application.stage.on("pointermove", moveDraggedNode);
         application.stage.on("pointerup", stopDrag);
@@ -539,7 +761,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         application.stage.off("pointermove", moveResizedNode);
         application.stage.off("pointerup", stopResize);
         application.stage.off("pointerupoutside", stopResize);
-        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, drag.patch);
+        if (Object.keys(drag.patch).length > 0) useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, drag.patch);
       };
       const moveResizedNode = (event: FederatedPointerEvent) => {
         const drag = resizeDragRef.current;
@@ -646,7 +868,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     const world = worldRef.current;
     if (application === null || world === null) return;
 
-    const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+    // Effect зависит от structuralKey, а не от document: нестуктурные коммиты (transform, visibility, text)
+    // применяются к живым view отдельным effect'ом ниже и не пересобирают Pixi-дерево.
+    const effectDocument = documentRef.current;
+    const scene = effectDocument.scenes.find((candidate) => candidate.id === sceneId);
     if (scene === undefined) throw new Error(`Scene '${sceneId}' does not exist in the project document.`);
 
     const profileChanged = renderedProfileRef.current !== activeProfile;
@@ -660,7 +885,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const gap = scene.layout.referenceViewports[activeProfile].width * 0.1;
       let offsetX = 0;
       let maxHeight = 0;
-      const placements = document.scenes.map((mapScene) => {
+      const placements = effectDocument.scenes.map((mapScene) => {
         const sceneViewport = mapScene.layout.referenceViewports[activeProfile];
         const placement = { scene: mapScene, viewport: sceneViewport, x: offsetX };
         offsetX += sceneViewport.width + gap;
@@ -676,15 +901,15 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       }
 
       void Promise.all(placements.map((placement) => Promise.all([
-        loadEditorSceneTextures(document, placement.scene.id),
-        loadEditorSceneSpines(document, placement.scene.id),
+        loadEditorSceneTextures(effectDocument, placement.scene.id),
+        loadEditorSceneSpines(effectDocument, placement.scene.id),
       ]))).then((loadedScenes) => {
         if (cancelled) return;
 
         const mapRoot = new Container();
         placements.forEach((placement, index) => {
           const [textures, spines] = loadedScenes[index]!;
-          const { root } = buildSceneView(document, placement.scene.id, activeProfile, textures, spines);
+          const { root } = buildSceneView(effectDocument, placement.scene.id, activeProfile, textures, spines);
           root.position.x = placement.x;
           root.eventMode = "none";
 
@@ -731,6 +956,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
           cameraFittedRef.current = true;
           fitCameraRef.current?.();
         }
+      }).catch((error: unknown) => {
+        console.error("Unable to rebuild the map view.", error);
       });
 
       return () => {
@@ -745,11 +972,20 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     const artboard = artboardRef.current?.clear();
     if (editingPrefabName === null) artboard?.rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
-    void Promise.all([loadEditorSceneTextures(document, sceneId), loadEditorSceneSpines(document, sceneId)]).then(([textures, spines]) => {
+    void Promise.all([loadEditorSceneTextures(effectDocument, sceneId), loadEditorSceneSpines(effectDocument, sceneId)]).then(([textures, spines]) => {
       if (cancelled) return;
 
-      const { root, nodeViews } = buildSceneView(document, sceneId, activeProfile, textures, spines);
+      // Пока грузились ассеты, могли пройти нестуктурные коммиты — строим по самому свежему документу.
+      const buildDocument = documentRef.current;
+      const builtScene = buildDocument.scenes.find((candidate) => candidate.id === sceneId);
+      if (builtScene === undefined) return;
+      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, textures, spines);
+      const technicalRootNodeId = editingPrefabName === null ? getSceneRoot(builtScene)?.id : undefined;
       for (const [nodeId, nodeView] of nodeViews) {
+        if (nodeId === technicalRootNodeId) {
+          nodeView.eventMode = "passive";
+          continue;
+        }
         nodeView.eventMode = "static";
         nodeView.on("pointerdown", (event) => {
           if (event.button !== 0) return;
@@ -766,7 +1002,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       spineDataRef.current = spines;
       world.addChild(root);
       const playbackState = useEditorStore.getState();
-      for (const node of scene.nodes) {
+      for (const node of builtScene.nodes) {
         if (node.type !== "spine") continue;
         const view = nodeViews.get(node.id);
         if (view !== undefined) setSpineViewAutoplay(view, playbackState.spineAutoplay[node.id] ?? true);
@@ -791,12 +1027,28 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         cameraFittedRef.current = true;
         fitCameraRef.current?.();
       }
+    }).catch((error: unknown) => {
+      console.error(`Unable to rebuild scene '${sceneId}'.`, error);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, application, document, editingPrefabName, sceneId, viewMode]);
+  }, [activeProfile, application, editingPrefabName, sceneId, structuralKey, viewMode]);
+
+  // Нестуктурные изменения документа (transform, visibility, text) применяются к живым view без пересборки сцены.
+  useEffect(() => {
+    if (application === null || viewMode !== "single") return;
+    const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+    if (scene === undefined) return;
+
+    for (const node of scene.nodes) {
+      const view = nodeViewsRef.current.get(node.id);
+      if (view === undefined || view.destroyed) continue;
+      updateNodeView(view, node, activeProfile);
+    }
+    redrawSelectionRef.current();
+  }, [activeProfile, application, document, sceneId, viewMode]);
 
   useEffect(() => {
     if (spineFrameRequest === undefined || selectedNodeId === null) return;
@@ -996,6 +1248,7 @@ export function App() {
   if (scene === undefined || renderDocument === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
 
   const owner = editingPrefab ?? scene;
+  const implicitRootNodeId = editingPrefab === undefined ? getSceneRoot(scene)?.id : undefined;
   const selectedNode = owner.nodes.find((node) => node.id === selectedNodeId);
   const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && owner.rootNodeIds.length === 1);
   const viewport = scene.layout.referenceViewports[activeProfile];
@@ -1015,7 +1268,7 @@ export function App() {
       <aside className="panel hierarchy-panel">
         <h1>Hierarchy</h1>
         <WindowsSection document={document} sceneId={sceneId} disabled={editingPrefab !== undefined} />
-        <HierarchyTree owner={owner} selectedNodeId={selectedNodeId} />
+        <HierarchyTree owner={owner} selectedNodeId={selectedNodeId} implicitRootNodeId={implicitRootNodeId} />
         <div className="hierarchy-assets-action">
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>

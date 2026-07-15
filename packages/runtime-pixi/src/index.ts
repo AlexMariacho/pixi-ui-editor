@@ -132,19 +132,13 @@ export function buildSceneView(
         throw new Error(`Scene '${sceneId}' references missing node '${nodeId}'.`);
       }
 
-      const { transform, visible } = resolveProfileTransform(node, profile);
+      const { transform } = resolveProfileTransform(node, profile);
       const view = createNodeView(node, transform, textures, spines, (prefabId) => {
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]));
       });
-      const pivotX = (transform.pivotX ?? 0) * transform.width;
-      const pivotY = (transform.pivotY ?? 0) * transform.height;
-      view.pivot.set(pivotX, pivotY);
-      view.position.set(transform.x + pivotX, transform.y + pivotY);
-      view.scale.set(view.scale.x * transform.scaleX, view.scale.y * transform.scaleY);
-      view.rotation = transform.rotation;
-      view.visible = visible;
+      updateNodeView(view, node, profile);
       if (registerViews) nodeViews.set(node.id, view);
 
       for (const childId of node.children) {
@@ -163,6 +157,45 @@ export function buildSceneView(
   };
 
   return { root: buildOwner(scene, true, new Set()), nodeViews };
+}
+
+/**
+ * Applies a node's resolved transform, visibility, and content to an existing display object,
+ * so editors can update views in place without rebuilding the scene tree.
+ */
+export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId): void {
+  const { transform, visible } = resolveProfileTransform(node, profile);
+  let scaleX = transform.scaleX;
+  let scaleY = transform.scaleY;
+
+  if (node.type === "image" && view instanceof Sprite) {
+    view.setSize(transform.width, transform.height);
+    scaleX = view.scale.x * transform.scaleX;
+    scaleY = view.scale.y * transform.scaleY;
+  } else if (node.type === "image" && view instanceof Graphics) {
+    view.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
+  } else if (node.type === "text" && view instanceof Text) {
+    if (view.text !== node.text) view.text = node.text;
+  } else if (node.type === "spine" || node.type === "prefab-instance") {
+    const spine = node.type === "spine" ? findSpineChild(view) : undefined;
+    if (spine !== undefined) {
+      const fit = fitSpineToTransform(spine.skeleton.data, transform);
+      if (fit !== undefined) {
+        spine.scale.set(fit.scaleX, fit.scaleY);
+        spine.position.set(fit.x, fit.y);
+      }
+    } else if (view instanceof Graphics) {
+      view.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+    }
+  }
+
+  const pivotX = (transform.pivotX ?? 0) * transform.width;
+  const pivotY = (transform.pivotY ?? 0) * transform.height;
+  view.pivot.set(pivotX, pivotY);
+  view.position.set(transform.x + pivotX, transform.y + pivotY);
+  view.rotation = transform.rotation;
+  view.scale.set(scaleX, scaleY);
+  view.visible = visible;
 }
 
 /** Lists the nodes a scene renders, including nodes of prefab definitions its prefab instances expand to. */

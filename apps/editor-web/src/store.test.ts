@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStableId, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./store.js";
 import { loadUiPrefs, UI_PREFS_STORAGE_KEY } from "./uiPrefs.js";
+import { getNodeWorldMatrix } from "./transformCoordinates.js";
 
 const initialDocument = structuredClone(useEditorStore.getState().document);
 const imageNodeId = "10000000-0000-4000-8000-000000000004";
@@ -106,8 +107,9 @@ describe("addNodeFromAsset", () => {
 
     const scene = useEditorStore.getState().document.scenes[0]!;
     const node = scene.nodes.at(-1)!;
-    expect(node).toMatchObject({ type: "spine", assetId: asset.id, parentId: null, transform: { x: 123.45, y: 67.89, width: 200, height: 200 } });
-    expect(scene.rootNodeIds.at(-1)).toBe(node.id);
+    const rootNodeId = scene.rootNodeIds[0]!;
+    expect(node).toMatchObject({ type: "spine", assetId: asset.id, parentId: rootNodeId, transform: { x: 123.45, y: 67.89, width: 200, height: 200 } });
+    expect(scene.nodes.find((candidate) => candidate.id === rootNodeId)?.children).toContain(node.id);
     expect(useEditorStore.getState().selectedNodeId).toBe(node.id);
   });
 });
@@ -188,6 +190,76 @@ describe("deleteNode", () => {
   });
 });
 
+describe("moveNode", () => {
+  it("reparents and reorders nodes while keeping hierarchy references valid", () => {
+    const scene = initialDocument.scenes[0]!;
+    const rootNodeId = scene.rootNodeIds[0]!;
+
+    useEditorStore.getState().moveNode(textNodeId, { parentId: rootNodeId, index: 0 });
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === rootNodeId)?.children).toEqual([textNodeId, imageNodeId]);
+
+    useEditorStore.getState().moveNode(imageNodeId, { parentId: textNodeId, index: 0 });
+
+    let movedScene = useEditorStore.getState().document.scenes[0]!;
+    expect(movedScene.nodes.find((node) => node.id === imageNodeId)?.parentId).toBe(textNodeId);
+    expect(movedScene.nodes.find((node) => node.id === rootNodeId)?.children).toEqual([textNodeId]);
+    expect(movedScene.nodes.find((node) => node.id === textNodeId)?.children).toEqual([imageNodeId]);
+
+    useEditorStore.getState().moveNode(imageNodeId, { parentId: null, index: 0 });
+    movedScene = useEditorStore.getState().document.scenes[0]!;
+    expect(movedScene.rootNodeIds).toEqual([imageNodeId, rootNodeId]);
+    expect(movedScene.nodes.find((node) => node.id === imageNodeId)?.parentId).toBeNull();
+    expect(movedScene.nodes.find((node) => node.id === textNodeId)?.children).toEqual([]);
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+
+  it("rejects moving a node into its own subtree", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    const before = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    useEditorStore.getState().moveNode(rootNodeId, { parentId: imageNodeId, index: 0 });
+
+    expect(useEditorStore.getState().document).toEqual(before);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("preserves the node world transform in both profiles when its parent changes", () => {
+    const store = useEditorStore.getState();
+    store.updateNodeProfileTransform(textNodeId, { x: 100, y: 50, scaleX: 2, scaleY: 2, rotation: 0.25 });
+    store.setActiveProfile("mobile");
+    useEditorStore.getState().updateNodeProfileTransform(textNodeId, { x: 20, y: 30, scaleX: 0.75, scaleY: 0.75, rotation: -0.1 });
+
+    const beforeOwner = useEditorStore.getState().document.scenes[0]!;
+    const beforeDesktop = getNodeWorldMatrix(beforeOwner, imageNodeId, "desktop")!;
+    const beforeMobile = getNodeWorldMatrix(beforeOwner, imageNodeId, "mobile")!;
+
+    useEditorStore.getState().moveNode(imageNodeId, { parentId: textNodeId, index: 0 });
+
+    const afterOwner = useEditorStore.getState().document.scenes[0]!;
+    const afterDesktop = getNodeWorldMatrix(afterOwner, imageNodeId, "desktop")!;
+    const afterMobile = getNodeWorldMatrix(afterOwner, imageNodeId, "mobile")!;
+    for (const key of ["a", "b", "c", "d", "tx", "ty"] as const) {
+      expect(afterDesktop[key]).toBeCloseTo(beforeDesktop[key], 6);
+      expect(afterMobile[key]).toBeCloseTo(beforeMobile[key], 6);
+    }
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+
+  it("rejects a reparent that would require unsupported skew instead of moving the node visually", () => {
+    useEditorStore.getState().updateNodeProfileTransform(textNodeId, { scaleX: 2, scaleY: 1, rotation: 0.5 });
+    const before = structuredClone(useEditorStore.getState().document);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    useEditorStore.getState().moveNode(imageNodeId, { parentId: textNodeId, index: 0 });
+
+    expect(useEditorStore.getState().document).toEqual(before);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("preserving its visual transform"));
+    warn.mockRestore();
+  });
+});
+
 describe("scenes", () => {
   it("addScene creates a valid document with two windows and activates the new one", () => {
     useEditorStore.getState().addScene();
@@ -195,7 +267,10 @@ describe("scenes", () => {
     const state = useEditorStore.getState();
     expect(state.document.scenes).toHaveLength(2);
     const addedScene = state.document.scenes[1]!;
-    expect(addedScene).toMatchObject({ name: "Window 2", rootNodeIds: [], nodes: [] });
+    expect(addedScene).toMatchObject({ name: "Window 2", rootNodeIds: [expect.any(String)] });
+    expect(addedScene.nodes).toHaveLength(1);
+    expect(addedScene.nodes[0]).toMatchObject({ id: addedScene.rootNodeIds[0], name: "Root", type: "container", parentId: null, children: [] });
+    expect(addedScene.nodes[0]?.layoutOverrides?.mobile?.transform).toMatchObject(addedScene.layout.referenceViewports.mobile);
     expect(addedScene.layout.referenceViewports).toEqual(initialDocument.scenes[0]!.layout.referenceViewports);
     expect(state.sceneId).toBe(addedScene.id);
     expect(validateProjectDocument(state.document).valid).toBe(true);

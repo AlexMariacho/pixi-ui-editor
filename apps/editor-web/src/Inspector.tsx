@@ -2,8 +2,9 @@ import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { UINode } from "@pixi-ui-editor/schema";
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { useEditorStore } from "./store.js";
+import { getEditingTarget, useEditorStore } from "./store.js";
 import { loadEditorSceneSpines } from "./assets.js";
+import { getNodeWorldMatrix } from "./transformCoordinates.js";
 
 type InspectorWindowProps = {
   title: string;
@@ -128,6 +129,7 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
   const spinePlayback = useEditorStore((state) => selectedNode?.type === "spine" ? state.spinePlaybackFrames[selectedNode.id] : undefined);
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
+  const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const [spineData, setSpineData] = useState<SkeletonData | undefined>();
 
   useEffect(() => {
@@ -146,6 +148,8 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
 
   const imageAssets = assets.filter((asset) => asset.type === "image");
   const resolvedTransform = resolveProfileTransform(selectedNode, activeProfile).transform;
+  const owner = getEditingTarget(document, { sceneId, editingPrefabId });
+  const worldTransform = owner === undefined ? undefined : getNodeWorldMatrix(owner, selectedNode.id, activeProfile);
   const updateTransform = (patch: Partial<UINode["transform"]>) => {
     updateNodeProfileTransform(selectedNode.id, patch);
   };
@@ -177,7 +181,9 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="Loop"><input type="checkbox" checked={selectedNode.loop ?? true} disabled={selectedNode.animation === undefined} onChange={(event) => updateSpineNodeLoop(selectedNode.id, event.target.checked)} /></InspectorField>
       <InspectorField label="Autoplay"><input type="checkbox" checked={spineAutoplay} disabled={selectedNode.animation === undefined} onChange={(event) => setSpineAutoplay(selectedNode.id, event.target.checked)} /></InspectorField>
       {(() => {
-        const animation = spineData?.findAnimation(selectedNode.animation ?? "");
+        const animation = selectedNode.animation
+          ? spineData?.findAnimation(selectedNode.animation)
+          : undefined;
         const fps = spineData?.fps && spineData.fps > 0 ? spineData.fps : 60;
         const total = spinePlayback?.total ?? Math.max(1, Math.round((animation?.duration ?? 0) * fps));
         const current = Math.min(total, spinePlayback?.current ?? 1);
@@ -193,8 +199,10 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
       <InspectorField label="Vertical"><input type="checkbox" checked={selectedNode.layoutOverrides?.mobile?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "mobile", event.target.checked)} /></InspectorField>
     </InspectorWindow>
     <InspectorWindow title="Transform">
-      <NumberField label="X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
-      <NumberField label="Y" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value })} />
+      <NumberField label="Local X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
+      <NumberField label="Local Y" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value })} />
+      <InspectorField label="Global X"><output>{worldTransform === undefined ? "—" : formatDegrees(worldTransform.tx)}</output></InspectorField>
+      <InspectorField label="Global Y"><output>{worldTransform === undefined ? "—" : formatDegrees(worldTransform.ty)}</output></InspectorField>
       <NumberField label="Width" value={resolvedTransform.width} step={1} onChange={(value) => updateTransform({ width: value })} />
       <NumberField label="Height" value={resolvedTransform.height} step={1} onChange={(value) => updateTransform({ height: value })} />
       <NumberField label="Scale X" value={resolvedTransform.scaleX} step={0.1} onChange={(value) => updateTransform({ scaleX: value })} />

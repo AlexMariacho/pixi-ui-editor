@@ -13,6 +13,7 @@ import {
 import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
 import { getCachedImageAssetSize } from "./assets.js";
+import { getNodeWorldMatrix, transformRelativeToParent } from "./transformCoordinates.js";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
@@ -54,6 +55,7 @@ export type EditorState = {
   reportSpinePlaybackFrame(nodeId: string, playback: { current: number; total: number }): void;
   addNode(type: "container" | "image" | "text" | "spine"): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
+  moveNode(nodeId: string, placement: { parentId: string | null; index: number }): void;
   deleteNode(nodeId: string): void;
   createPrefabFromNode(nodeId: string): string | null;
   addPrefabInstance(prefabId: string, position: { x: number; y: number }): void;
@@ -95,6 +97,28 @@ function commitCandidate(state: EditorState, candidate: ProjectDocument, failure
 }
 
 export type EditingTarget = Scene | PrefabDefinition;
+
+/** The first root container of a scene is its technical screen boundary, not an editable hierarchy item. */
+export function getSceneRoot(scene: Scene): UINode | undefined {
+  const rootNodeId = scene.rootNodeIds[0];
+  const root = rootNodeId === undefined ? undefined : scene.nodes.find((node) => node.id === rootNodeId);
+  return root?.type === "container" ? root : undefined;
+}
+
+function createSceneRoot(scene: Pick<Scene, "layout">): UINode {
+  const desktop = scene.layout.referenceViewports.desktop;
+  const mobile = scene.layout.referenceViewports.mobile;
+  return {
+    id: createStableId(),
+    name: "Root",
+    type: "container",
+    parentId: null,
+    children: [],
+    visible: true,
+    transform: { x: 0, y: 0, width: desktop.width, height: desktop.height, scaleX: 1, scaleY: 1, rotation: 0 },
+    layoutOverrides: { mobile: { transform: { width: mobile.width, height: mobile.height } } },
+  };
+}
 
 /** Возвращает текущего владельца nodes: редактируемый пресет либо активное окно. */
 export function getEditingTarget(candidate: ProjectDocument, state: Pick<EditorState, "editingPrefabId" | "sceneId">): EditingTarget | undefined {
@@ -176,6 +200,9 @@ export const useEditorStore = create<EditorState>((set) => ({
       nodes: [],
       layout: { referenceViewports: structuredClone(activeScene.layout.referenceViewports) },
     };
+    const root = createSceneRoot(scene);
+    scene.rootNodeIds.push(root.id);
+    scene.nodes.push(root);
     candidate.scenes.push(scene);
 
     const committed = commitCandidate(state, candidate, "Window creation was rejected because it makes the project document invalid.");
@@ -389,7 +416,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     const leafParent = selectedNode?.parentId === null || selectedNode?.parentId === undefined
       ? undefined
       : target.nodes.find((node) => node.id === selectedNode.parentId && node.type === "container");
-    const parent = selectedParent ?? leafParent;
+    const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
+    const parent = selectedParent ?? leafParent ?? sceneRoot;
     const nodeNumber = candidate.scenes.reduce(
       (count, candidateScene) => count + candidateScene.nodes.filter((node) => node.type === type).length,
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
@@ -441,6 +469,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     const isImage = asset.type === "image";
+    const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
     const imageSize = getCachedImageAssetSize(asset);
     const width = isImage ? imageSize?.width ?? 100 : 200;
     const height = isImage ? imageSize?.height ?? 100 : 200;
@@ -449,16 +478,101 @@ export const useEditorStore = create<EditorState>((set) => ({
       name: asset.name,
       type: isImage ? "image" : "spine",
       assetId: asset.id,
-      parentId: null,
+      parentId: sceneRoot?.id ?? null,
       children: [],
       visible: true,
       transform: { x: position.x, y: position.y, width, height, scaleX: 1, scaleY: 1, rotation: 0 },
     };
     target.nodes.push(node);
-    target.rootNodeIds.push(node.id);
+    if (sceneRoot === undefined) target.rootNodeIds.push(node.id);
+    else sceneRoot.children.push(node.id);
 
     const committed = commitCandidate(state, candidate, "Asset node creation was rejected because it makes the project document invalid.");
     return committed === state ? state : { ...committed, selectedNodeId: node.id };
+  }),
+  moveNode: (nodeId, placement) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const target = getEditingTarget(candidate, state);
+    const node = target?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    const parent = placement.parentId === null
+      ? undefined
+      : target?.nodes.find((candidateNode) => candidateNode.id === placement.parentId);
+
+    if (target === undefined || node === undefined || (placement.parentId !== null && parent === undefined)) {
+      console.warn(`Cannot move node '${nodeId}': the editing target, node, or destination parent does not exist.`);
+      return state;
+    }
+
+    const subtreeIds = new Set<string>();
+    const nodesById = new Map(target.nodes.map((candidateNode) => [candidateNode.id, candidateNode]));
+    const collectSubtree = (candidateNodeId: string): void => {
+      if (subtreeIds.has(candidateNodeId)) return;
+      subtreeIds.add(candidateNodeId);
+      nodesById.get(candidateNodeId)?.children.forEach(collectSubtree);
+    };
+    collectSubtree(node.id);
+
+    if (placement.parentId !== null && subtreeIds.has(placement.parentId)) {
+      console.warn(`Cannot move node '${nodeId}' into itself or one of its descendants.`);
+      return state;
+    }
+
+    const sourceChildren = node.parentId === null
+      ? target.rootNodeIds
+      : nodesById.get(node.parentId)?.children;
+    const destinationChildren = parent?.children ?? target.rootNodeIds;
+    const sourceIndex = sourceChildren?.indexOf(node.id) ?? -1;
+    if (sourceChildren === undefined || sourceIndex < 0) {
+      console.warn(`Cannot move node '${nodeId}': its current hierarchy position is inconsistent.`);
+      return state;
+    }
+
+    const sameCollection = sourceChildren === destinationChildren;
+    const requestedIndex = Number.isFinite(placement.index) ? Math.trunc(placement.index) : destinationChildren.length;
+    const insertionIndex = Math.max(0, Math.min(
+      requestedIndex - (sameCollection && sourceIndex < requestedIndex ? 1 : 0),
+      destinationChildren.length - (sameCollection ? 1 : 0),
+    ));
+    if (sameCollection && insertionIndex === sourceIndex) return state;
+
+    const parentChanged = node.parentId !== placement.parentId;
+    const preservedTransforms = new Map<LayoutProfileId, UINode["transform"]>();
+    if (parentChanged) {
+      for (const profile of ["desktop", "mobile"] as const) {
+        const worldMatrix = getNodeWorldMatrix(target, node.id, profile);
+        const parentWorldMatrix = placement.parentId === null ? undefined : getNodeWorldMatrix(target, placement.parentId, profile);
+        const resolvedTransform = resolveProfileTransform(node, profile).transform;
+        const preserved = worldMatrix === undefined
+          ? undefined
+          : transformRelativeToParent(worldMatrix, parentWorldMatrix, resolvedTransform);
+        if (preserved === undefined) {
+          console.warn(`Cannot move node '${nodeId}': preserving its visual transform would require skew or an invertible destination parent.`);
+          return state;
+        }
+        preservedTransforms.set(profile, preserved);
+      }
+    }
+
+    sourceChildren.splice(sourceIndex, 1);
+    destinationChildren.splice(insertionIndex, 0, node.id);
+    node.parentId = placement.parentId;
+    if (parentChanged) {
+      const desktop = preservedTransforms.get("desktop")!;
+      const mobile = preservedTransforms.get("mobile")!;
+      node.transform = desktop;
+      node.layoutOverrides ??= {};
+      node.layoutOverrides.mobile ??= {};
+      node.layoutOverrides.mobile.transform = {
+        ...node.layoutOverrides.mobile.transform,
+        x: mobile.x,
+        y: mobile.y,
+        scaleX: mobile.scaleX,
+        scaleY: mobile.scaleY,
+        rotation: mobile.rotation,
+      };
+    }
+
+    return commitCandidate(state, candidate, "Node move was rejected because it makes the project document invalid.");
   }),
   deleteNode: (nodeId) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -559,18 +673,20 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     const boundingBox = computePrefabBoundingBox(prefab);
+    const sceneRoot = getSceneRoot(scene);
     const node: UINode = {
       id: createStableId(),
       name: prefab.name,
       type: "prefab-instance",
       prefabId: prefab.id,
-      parentId: null,
+      parentId: sceneRoot?.id ?? null,
       children: [],
       visible: true,
       transform: { x: position.x, y: position.y, width: boundingBox.width, height: boundingBox.height, scaleX: 1, scaleY: 1, rotation: 0 },
     };
     scene.nodes.push(node);
-    scene.rootNodeIds.push(node.id);
+    if (sceneRoot === undefined) scene.rootNodeIds.push(node.id);
+    else sceneRoot.children.push(node.id);
 
     const committed = commitCandidate(state, candidate, "Preset instance creation was rejected because it makes the project document invalid.");
     return committed === state ? state : { ...committed, selectedNodeId: node.id };
