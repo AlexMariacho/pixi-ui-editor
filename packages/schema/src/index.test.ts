@@ -1,21 +1,134 @@
 import { describe, expect, it } from "vitest";
-import { CURRENT_SCHEMA_VERSION, createStableId, migrateProjectDocument, serializeProjectDocument, type ProjectDocument, validateProjectDocument } from "./index.js";
-const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-function fixture(): ProjectDocument { const project = id(1), scene = id(2), root = id(3), image = id(4), asset = id(5), prefab = id(6); return { schemaVersion: CURRENT_SCHEMA_VERSION, project: { id: project, name: "Project" }, settings: { layoutProfileSelection: { mode: "aspect-ratio", mobileMaxAspectRatio: 1 } }, assets: [{ id: asset, name: "Logo", type: "image", source: { uri: "assets/logo.png", mediaType: "image/png" } }], prefabs: [{ id: prefab, name: "Badge", rootNodeIds: [], nodes: [], exposedProperties: [] }], scenes: [{ id: scene, name: "Main", rootNodeIds: [root], layout: { referenceViewports: { desktop: { width: 1920, height: 1080 }, mobile: { width: 390, height: 844 } } }, nodes: [{ id: root, name: "Root", type: "container", parentId: null, children: [image], visible: true, transform: { x: 0, y: 0, width: 100, height: 100, scaleX: 1, scaleY: 1, rotation: 0 } }, { id: image, name: "Logo", type: "image", assetId: asset, parentId: root, children: [], visible: true, transform: { x: 0, y: 0, width: 10, height: 10, scaleX: 1, scaleY: 1, rotation: 0 } }] }] }; }
-const check = (fn: (x: ProjectDocument) => void) => { const x = fixture(); fn(x); return validateProjectDocument(x); };
+import {
+  createStableId,
+  migrateProjectDocument,
+  serializeProjectDocument,
+  validateProjectDocument,
+  type ProjectDocument,
+} from "./index.js";
+import {
+  createProjectDocumentFixture,
+  stableId,
+  validateFixtureMutation,
+} from "./index.test-fixtures.js";
+
 describe("schema v1", () => {
-  it("generates independent UUID stable IDs", () => { const a = createStableId(), b = createStableId(); expect(a).toMatch(/^[0-9a-f]{8}-/i); expect(a).not.toBe(b); });
-  it("accepts a minimal valid document", () => expect(validateProjectDocument(fixture())).toEqual({ valid: true, issues: [] }));
-  it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => { const result = check((x) => delete (x.scenes[0]!.layout.referenceViewports as Record<string, unknown>)[profile]); expect(result.issues[0]!.code).toBe("STRUCTURAL_SCHEMA"); });
-  it("reports duplicate IDs", () => { const r = check((x) => { x.scenes[0]!.nodes[1]!.id = x.scenes[0]!.nodes[0]!.id; }); expect(r.issues.some((x) => x.code === "DUPLICATE_ID")).toBe(true); });
-  it("reports missing child and asset references", () => { const r = check((x) => { x.scenes[0]!.nodes[0]!.children = [id(99)]; (x.scenes[0]!.nodes[1] as { assetId: string }).assetId = id(98); }); expect(r.issues.map((x) => x.code)).toEqual(expect.arrayContaining(["MISSING_CHILD_REFERENCE", "MISSING_ASSET_REFERENCE"])); });
-  it("reports missing prefab references", () => { const r = check((x) => { x.scenes[0]!.nodes[1] = { ...x.scenes[0]!.nodes[1]!, type: "prefab-instance", prefabId: id(99) }; }); expect(r.issues.some((x) => x.code === "MISSING_PREFAB_REFERENCE")).toBe(true); });
-  it("reports inconsistent parent and children", () => { const r = check((x) => { x.scenes[0]!.nodes[1]!.parentId = null; }); expect(r.issues.some((x) => x.code === "HIERARCHY_PARENT_MISMATCH")).toBe(true); });
-  it("reports cycles", () => { const r = check((x) => { const n = x.scenes[0]!.nodes; n[0]!.parentId = n[1]!.id; n[1]!.children = [n[0]!.id]; }); expect(r.issues.some((x) => x.code === "HIERARCHY_CYCLE")).toBe(true); });
-  it("reports duplicate bindings", () => { const r = check((x) => { x.scenes[0]!.nodes[0]!.binding = "target"; x.scenes[0]!.nodes[1]!.binding = "target"; }); expect(r.issues.some((x) => x.code === "DUPLICATE_BINDING")).toBe(true); });
-  it("rejects an incomplete spine asset", () => { const r = check((x) => { x.assets[0] = { id: id(5), name: "Hero", type: "spine", files: { skeleton: { name: "hero.json", uri: "hero.json", mediaType: "application/json" }, textures: [{ name: "hero.png", uri: "hero.png", mediaType: "image/png" }] } } as never; }); expect(r.issues.some((x) => x.code === "STRUCTURAL_SCHEMA")).toBe(true); });
-  it("rejects unknown profile keys and schema versions", () => { const r = check((x) => { x.scenes[0]!.nodes[0]!.layoutOverrides = { tablet: {} } as never; (x as { schemaVersion: number }).schemaVersion = 0; }); expect(r.issues.some((x) => x.code === "STRUCTURAL_SCHEMA")).toBe(true); });
-  it("migrates v1 without mutating input", () => { const input = fixture(), output = migrateProjectDocument(input); expect(output).toEqual(input); expect(output).not.toBe(input); output.project.name = "Changed"; expect(input.project.name).toBe("Project"); });
-  it("rejects non-finite numbers", () => { const r = check((x) => { x.scenes[0]!.nodes[0]!.transform.x = Number.NaN; }); expect(r.issues.some((x) => x.code === "NON_FINITE_NUMBER")).toBe(true); });
-  it("serializes deterministically without mutating the document", () => { const input = fixture(), before = structuredClone(input); const reordered = Object.fromEntries(Object.entries(input).reverse()) as ProjectDocument; expect(serializeProjectDocument(input)).toBe(serializeProjectDocument(reordered)); expect(serializeProjectDocument(input).endsWith("\n")).toBe(true); expect(input).toEqual(before); });
+  it("generates independent UUID stable IDs", () => {
+    const first = createStableId();
+    const second = createStableId();
+    expect(first).toMatch(/^[0-9a-f]{8}-/i);
+    expect(first).not.toBe(second);
+  });
+
+  it("accepts a minimal valid document", () => {
+    expect(validateProjectDocument(createProjectDocumentFixture())).toEqual({ valid: true, issues: [] });
+  });
+
+  it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => {
+    const result = validateFixtureMutation((document) => {
+      delete (document.scenes[0]!.layout.referenceViewports as Record<string, unknown>)[profile];
+    });
+    expect(result.issues[0]!.code).toBe("STRUCTURAL_SCHEMA");
+  });
+
+  it("reports duplicate IDs", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[1]!.id = document.scenes[0]!.nodes[0]!.id;
+    });
+    expect(result.issues.some((issue) => issue.code === "DUPLICATE_ID")).toBe(true);
+  });
+
+  it("reports missing child and asset references", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[0]!.children = [stableId(99)];
+      (document.scenes[0]!.nodes[1] as { assetId: string }).assetId = stableId(98);
+    });
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["MISSING_CHILD_REFERENCE", "MISSING_ASSET_REFERENCE"]),
+    );
+  });
+
+  it("reports missing prefab references", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[1] = {
+        ...document.scenes[0]!.nodes[1]!,
+        type: "prefab-instance",
+        prefabId: stableId(99),
+      };
+    });
+    expect(result.issues.some((issue) => issue.code === "MISSING_PREFAB_REFERENCE")).toBe(true);
+  });
+
+  it("reports inconsistent parent and children", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[1]!.parentId = null;
+    });
+    expect(result.issues.some((issue) => issue.code === "HIERARCHY_PARENT_MISMATCH")).toBe(true);
+  });
+
+  it("reports cycles", () => {
+    const result = validateFixtureMutation((document) => {
+      const nodes = document.scenes[0]!.nodes;
+      nodes[0]!.parentId = nodes[1]!.id;
+      nodes[1]!.children = [nodes[0]!.id];
+    });
+    expect(result.issues.some((issue) => issue.code === "HIERARCHY_CYCLE")).toBe(true);
+  });
+
+  it("reports duplicate bindings", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[0]!.binding = "target";
+      document.scenes[0]!.nodes[1]!.binding = "target";
+    });
+    expect(result.issues.some((issue) => issue.code === "DUPLICATE_BINDING")).toBe(true);
+  });
+
+  it("rejects an incomplete spine asset", () => {
+    const result = validateFixtureMutation((document) => {
+      document.assets[0] = {
+        id: stableId(5),
+        name: "Hero",
+        type: "spine",
+        files: {
+          skeleton: { name: "hero.json", uri: "hero.json", mediaType: "application/json" },
+          textures: [{ name: "hero.png", uri: "hero.png", mediaType: "image/png" }],
+        },
+      } as never;
+    });
+    expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
+  });
+
+  it("rejects unknown profile keys and schema versions", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[0]!.layoutOverrides = { tablet: {} } as never;
+      (document as { schemaVersion: number }).schemaVersion = 0;
+    });
+    expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
+  });
+
+  it("clones and validates the current version without mutating input", () => {
+    const input = createProjectDocumentFixture();
+    const output = migrateProjectDocument(input);
+    expect(output).toEqual(input);
+    expect(output).not.toBe(input);
+    output.project.name = "Changed";
+    expect(input.project.name).toBe("Project");
+  });
+
+  it("rejects non-finite numbers", () => {
+    const result = validateFixtureMutation((document) => {
+      document.scenes[0]!.nodes[0]!.transform.x = Number.NaN;
+    });
+    expect(result.issues.some((issue) => issue.code === "NON_FINITE_NUMBER")).toBe(true);
+  });
+
+  it("serializes deterministically without mutating the document", () => {
+    const input = createProjectDocumentFixture();
+    const before = structuredClone(input);
+    const reordered = Object.fromEntries(Object.entries(input).reverse()) as ProjectDocument;
+
+    expect(serializeProjectDocument(input)).toBe(serializeProjectDocument(reordered));
+    expect(serializeProjectDocument(input).endsWith("\n")).toBe(true);
+    expect(input).toEqual(before);
+  });
 });

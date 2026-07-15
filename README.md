@@ -52,6 +52,7 @@ pnpm test
 ```
 
 Run `pnpm build` before `pnpm typecheck`: package type declarations are resolved from `dist/`, so typechecking fails until the workspace has been built once.
+The repository deliberately favors a small set of contract and pipeline tests over coverage targets; see the [testing strategy](docs/testing-strategy.md) before adding new suites.
 
 ## Run the editor
 

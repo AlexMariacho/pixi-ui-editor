@@ -5,6 +5,7 @@
 - [Концепция платформы](game-ui-authoring-platform-concept.md)
 - [План реализации MVP](game-ui-platform-implementation-plan-mvp-v3.md)
 - [Ревью zStudio](zstudio-review-for-game-ui-platform.md)
+- [Стратегия тестирования](testing-strategy.md)
 - [Итерация 01 — технический foundation](tasks/iteration-01-foundation/README.md)
 - [Итерация 02 — завершённый визуальный прототип редактора](tasks/iteration-02-editor-prototype/README.md)
 - [Итерация 03 — ориентация экрана и размеры viewport](tasks/iteration-03-orientation-and-viewports/README.md)

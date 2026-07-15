@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { parseProjectDocumentJson } from "@pixi-ui-editor/runtime-pixi";
 import { serializeProjectDocument, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
-import { buildExportEntries } from "./exportPackage.js";
+import { strFromU8, unzipSync } from "fflate";
+import { buildExportEntries, buildProjectPackageBlob } from "./exportPackage.js";
 
 const imageAssetId = "20000000-0000-4000-8000-000000000001";
 const spineAssetId = "20000000-0000-4000-8000-000000000002";
@@ -44,5 +46,27 @@ describe("buildExportEntries", () => {
     expect(serializeProjectDocument(document)).not.toContain("data:");
     // Исходный документ не мутируется.
     expect(sourceDocument.assets[0]).toMatchObject({ source: { uri: "data:image/png;base64,AAAA" } });
+  });
+
+  it("builds a ZIP whose document can be loaded through the runtime boundary", async () => {
+    const packageSource = structuredClone(sourceDocument);
+    const spine = packageSource.assets[1]!;
+    if (spine.type !== "spine") throw new Error("Expected the Spine export fixture.");
+    spine.files.textures[0]!.uri = "data:image/png;base64,DDDD";
+
+    const blob = await buildProjectPackageBlob(packageSource, (uri) => uri);
+    const archive = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+    const projectJson = archive["project.json"];
+
+    expect(projectJson).toBeDefined();
+    const loaded = parseProjectDocumentJson(strFromU8(projectJson!));
+    expect(validateProjectDocument(loaded).valid).toBe(true);
+    expect(Object.keys(archive).sort()).toEqual([
+      `assets/${imageAssetId}/Hero-Icon.png`,
+      `assets/${spineAssetId}/hero.atlas`,
+      `assets/${spineAssetId}/hero.json`,
+      `assets/${spineAssetId}/hero.png`,
+      "project.json",
+    ].sort());
   });
 });

@@ -92,15 +92,10 @@ describe("sample project loader smoke test", () => {
     expect(parseProjectDocumentJson(serializeProjectDocument(renamed)).scenes[0]!.nodes[1]).toMatchObject({ id: ids.image, assetId: ids.asset });
   });
 
-  it.each([
-    ["broken asset reference", (document: ReturnType<typeof parseProjectDocumentJson>) => { (document.scenes[0]!.nodes[1] as { assetId: string }).assetId = ids.text; }, "MISSING_ASSET_REFERENCE"],
-    ["duplicate binding", (document: ReturnType<typeof parseProjectDocumentJson>) => { document.scenes[0]!.nodes[1]!.binding = "welcomeLabel"; }, "DUPLICATE_BINDING"],
-    ["missing mobile profile", (document: ReturnType<typeof parseProjectDocumentJson>) => { delete (document.scenes[0]!.layout.referenceViewports as Record<string, unknown>).mobile; }, "STRUCTURAL_SCHEMA"],
-    ["hierarchy cycle", (document: ReturnType<typeof parseProjectDocumentJson>) => { const nodes = document.scenes[0]!.nodes; nodes[0]!.parentId = ids.image; nodes[1]!.children = [ids.root]; }, "HIERARCHY_CYCLE"],
-  ])("rejects %s", (_label, mutate, expectedCode) => {
+  it("surfaces schema validation codes through the JSON loading boundary", () => {
     const invalid = clone(parseProjectDocumentJson(sampleJson));
-    mutate(invalid);
-    expect(() => parseProjectDocumentJson(JSON.stringify(invalid))).toThrow(expectedCode);
+    (invalid.scenes[0]!.nodes[1] as { assetId: string }).assetId = ids.text;
+    expect(() => parseProjectDocumentJson(JSON.stringify(invalid))).toThrow("MISSING_ASSET_REFERENCE");
   });
 
   it("distinguishes malformed JSON from schema errors", () => {
