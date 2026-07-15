@@ -51,6 +51,30 @@ function nodeRectBounds(nodeView: Container, width: number, height: number): Can
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+function displayedBounds(nodeView: Container): CanvasBounds {
+  const bounds = nodeView.getBounds();
+  return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+}
+
+function selectionBounds(
+  node: UINode,
+  nodesById: ReadonlyMap<string, UINode>,
+  nodeViews: ReadonlyMap<string, Container>,
+): CanvasBounds | undefined {
+  const nodeView = nodeViews.get(node.id);
+  if (nodeView === undefined || nodeView.destroyed || !nodeView.visible) return undefined;
+
+  if (node.type !== "container") return displayedBounds(nodeView);
+
+  const childBounds = node.children.flatMap((childId) => {
+    const child = nodesById.get(childId);
+    if (child === undefined) return [];
+    const bounds = selectionBounds(child, nodesById, nodeViews);
+    return bounds === undefined ? [] : [bounds];
+  });
+  return unionBounds(childBounds) ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE);
+}
+
 function unionBounds(bounds: readonly CanvasBounds[]): CanvasBounds | undefined {
   if (bounds.length === 0) return undefined;
   const left = Math.min(...bounds.map((candidate) => candidate.x));
@@ -542,29 +566,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     const owner = getEditingTarget(editorState.document, editorState);
     if (owner === undefined) return;
     const nodesById = new Map(owner.nodes.map((candidate) => [candidate.id, candidate]));
-    const collectContainerContentBounds = (container: UINode): CanvasBounds[] => container.children.flatMap((childId) => {
-      const child = nodesById.get(childId);
-      const childView = nodeViewsRef.current.get(childId);
-      if (child === undefined || childView === undefined || childView.destroyed || !childView.visible) return [];
-      if (child.type === "container") {
-        const nestedBounds = collectContainerContentBounds(child);
-        return nestedBounds.length > 0
-          ? nestedBounds
-          : [nodeRectBounds(childView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)];
-      }
-      const childTransform = resolveProfileTransform(child, editorState.activeProfile).transform;
-      return [nodeRectBounds(childView, childTransform.width, childTransform.height)];
-    });
-
     const selectedBounds = editorState.selectedNodeIds.flatMap((nodeId) => {
       const node = nodesById.get(nodeId);
       const nodeView = nodeViewsRef.current.get(nodeId);
-      if (node === undefined || nodeView === undefined || nodeView.destroyed || !nodeView.visible) return [];
-      const { transform } = resolveProfileTransform(node, editorState.activeProfile);
-      const bounds = node.type === "container"
-        ? unionBounds(collectContainerContentBounds(node))
-          ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
-        : nodeRectBounds(nodeView, transform.width, transform.height);
+      if (node === undefined || nodeView === undefined) return [];
+      const bounds = selectionBounds(node, nodesById, nodeViewsRef.current);
+      if (bounds === undefined) return [];
       selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
       return [{ node, nodeView, bounds }];
     });
@@ -663,27 +670,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const owner = getEditingTarget(state.document, state);
         const technicalRootId = state.editingPrefabId === null && owner !== undefined && "layout" in owner ? getSceneRoot(owner)?.id : undefined;
         const nodesById = new Map(owner?.nodes.map((node) => [node.id, node]) ?? []);
-        const collectContainerContentBounds = (container: UINode): CanvasBounds[] => container.children.flatMap((childId) => {
-          const child = nodesById.get(childId);
-          const childView = nodeViewsRef.current.get(childId);
-          if (child === undefined || childView === undefined || childView.destroyed || !childView.visible) return [];
-          if (child.type === "container") {
-            const nestedBounds = collectContainerContentBounds(child);
-            return nestedBounds.length > 0
-              ? nestedBounds
-              : [nodeRectBounds(childView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)];
-          }
-          const childTransform = resolveProfileTransform(child, state.activeProfile).transform;
-          return [nodeRectBounds(childView, childTransform.width, childTransform.height)];
-        });
         const selectedIds = owner?.nodes.flatMap((node) => {
           if (node.id === technicalRootId) return [];
-          const view = nodeViewsRef.current.get(node.id);
-          if (view === undefined || view.destroyed || !view.visible) return [];
-          const transform = resolveProfileTransform(node, state.activeProfile).transform;
-          const bounds = node.type === "container"
-            ? unionBounds(collectContainerContentBounds(node)) ?? nodeRectBounds(view, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
-            : nodeRectBounds(view, transform.width, transform.height);
+          const bounds = selectionBounds(node, nodesById, nodeViewsRef.current);
+          if (bounds === undefined) return [];
           const intersects = bounds.x <= area.x + area.width && bounds.x + bounds.width >= area.x
             && bounds.y <= area.y + area.height && bounds.y + bounds.height >= area.y;
           return intersects ? [node.id] : [];
