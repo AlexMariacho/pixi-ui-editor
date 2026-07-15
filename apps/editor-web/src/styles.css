@@ -163,6 +163,8 @@ body { margin: 0; }
 
 .toolbar-danger:not(:disabled) { color: var(--danger); }
 
+.canvas-bottom-toolbar .toolbar-danger:disabled { color: #5a5a5a; border-color: var(--border); cursor: default; }
+
 /* Side panels */
 
 .tool-panel-button {

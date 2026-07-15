@@ -9,6 +9,7 @@ import { downloadProjectPackage } from "./exportPackage.js";
 import { AssetsWindow } from "./AssetPanel.js";
 import { NODE_DRAG_TYPE, PREFAB_DRAG_TYPE, PresetsWindow } from "./PresetsPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
+import { EDITOR_SHORTCUTS, isEditorTextInput, TOOL_BY_SHORTCUT, TOOL_SHORTCUTS } from "./keyboardShortcuts.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -513,7 +514,7 @@ function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMo
   });
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, deleteDisabled, deleteSelectedNode, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
@@ -524,6 +525,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   editingPrefabName: string | null;
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
+  deleteDisabled: boolean;
+  deleteSelectedNode: () => void;
   setActiveProfile: (profile: LayoutProfileId) => void;
   setActiveTool: (tool: EditorTool) => void;
   addNode: (type: "container" | "image" | "text" | "spine") => void;
@@ -1214,7 +1217,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
 
   return (
     <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event) || isPrefabDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={drop}>
-      <ToolPanel activeTool={activeTool} viewMode={viewMode} setActiveTool={setActiveTool} />
+      <ToolPanel activeTool={activeTool} viewMode={viewMode} deleteDisabled={deleteDisabled} deleteSelectedNode={deleteSelectedNode} setActiveTool={setActiveTool} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
           type="button"
@@ -1230,6 +1233,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
+        <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={`Delete selected node (${EDITOR_SHORTCUTS.deleteNode.label})`} onClick={deleteSelectedNode}>Delete</button>
       </div>
       {editingPrefabName !== null && <div className="preset-editing-status">
         <span>Editing preset: {editingPrefabName}</span>
@@ -1243,16 +1247,23 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   );
 }
 
-function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: EditorTool; viewMode: ViewMode; setActiveTool: (tool: EditorTool) => void }) {
+function ToolPanel({ activeTool, viewMode, deleteDisabled, deleteSelectedNode, setActiveTool }: { activeTool: EditorTool; viewMode: ViewMode; deleteDisabled: boolean; deleteSelectedNode: () => void; setActiveTool: (tool: EditorTool) => void }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.altKey || event.metaKey) return;
       const target = event.target;
-      if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return;
+      if (isEditorTextInput(target)) return;
 
       const state = useEditorStore.getState();
       const key = event.key.toLowerCase();
-      if (key === "m") {
+      if (key === EDITOR_SHORTCUTS.deleteNode.key.toLowerCase()) {
+        if (!deleteDisabled) {
+          event.preventDefault();
+          deleteSelectedNode();
+        }
+        return;
+      }
+      if (key === EDITOR_SHORTCUTS.map.key) {
         state.setViewMode(state.viewMode === "map" ? "single" : "map");
         return;
       }
@@ -1268,8 +1279,7 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
         }
       }
 
-      const toolByKey: Record<string, EditorTool> = { q: "pan", w: "select", e: "resize" };
-      const tool = toolByKey[key];
+      const tool = TOOL_BY_SHORTCUT[key];
       if (tool === undefined) return;
       if (state.viewMode === "map" && tool !== "pan") return;
       setActiveTool(tool);
@@ -1277,13 +1287,13 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setActiveTool]);
+  }, [deleteDisabled, deleteSelectedNode, setActiveTool]);
 
   const setViewMode = useEditorStore((state) => state.setViewMode);
   const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
-    { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: "Q" },
-    { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: "W" },
-    { tool: "resize", label: "Resize", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4M8 8h8v8H8z" /></svg>, shortcut: "E" },
+    { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: TOOL_SHORTCUTS.pan.label },
+    { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: TOOL_SHORTCUTS.select.label },
+    { tool: "resize", label: "Resize", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4M8 8h8v8H8z" /></svg>, shortcut: TOOL_SHORTCUTS.resize.label },
   ];
 
   return (
@@ -1305,8 +1315,8 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
       <button
         type="button"
         className={`tool-panel-button${viewMode === "map" ? " tool-panel-button-active" : ""}`}
-        title="Map (M)"
-        aria-label="Map (M)"
+        title={`Map (${EDITOR_SHORTCUTS.map.label})`}
+        aria-label={`Map (${EDITOR_SHORTCUTS.map.label})`}
         aria-pressed={viewMode === "map"}
         onClick={() => setViewMode(viewMode === "map" ? "single" : "map")}
       >
@@ -1375,7 +1385,6 @@ export function App() {
         <span>{document.project.name}</span>
         <div className="toolbar-actions">
           <button type="button" onClick={() => { void downloadProjectPackage(document, resolveFileUrl); }}>Export</button>
-          <button type="button" className="toolbar-danger" disabled={deleteDisabled} onClick={() => selectedNodeId !== null && deleteNode(selectedNodeId)}>Delete</button>
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>
@@ -1388,7 +1397,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} deleteDisabled={deleteDisabled} deleteSelectedNode={() => { if (selectedNodeId !== null) deleteNode(selectedNodeId); }} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
   );
