@@ -259,7 +259,7 @@ function ScreenResolutionsMenu({
   );
 }
 
-function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocument; sceneId: string; disabled: boolean }) {
+function WindowsSection({ document, sceneId, editingPrefab }: { document: ProjectDocument; sceneId: string | null; editingPrefab: boolean }) {
   const selectScene = useEditorStore((state) => state.selectScene);
   const addScene = useEditorStore((state) => state.addScene);
   const renameScene = useEditorStore((state) => state.renameScene);
@@ -294,10 +294,9 @@ function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocu
               <button
                 type="button"
                 className={`window-row${scene.id === sceneId ? " window-row-active" : ""}`}
-                disabled={disabled}
                 onClick={() => selectScene(scene.id)}
                 onDoubleClick={() => {
-                  if (disabled) return;
+                  if (editingPrefab) return;
                   setRenamingSceneId(scene.id);
                   setRenameText(scene.name);
                 }}
@@ -310,7 +309,7 @@ function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocu
               className="window-delete"
               aria-label={`Delete window ${scene.name}`}
               title={`Delete window ${scene.name}`}
-              disabled={disabled || document.scenes.length === 1}
+              disabled={editingPrefab || document.scenes.length === 1}
               onClick={() => {
                 if (window.confirm(`Delete window "${scene.name}"?`)) deleteScene(scene.id);
               }}
@@ -320,14 +319,14 @@ function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocu
           </li>
         ))}
       </ul>
-      <button type="button" className="window-add" disabled={disabled} onClick={() => addScene()}>+ Window</button>
+      <button type="button" className="window-add" disabled={editingPrefab} onClick={() => addScene()}>+ Window</button>
     </section>
   );
 }
 
 type HierarchyDropMode = "before" | "inside" | "after";
 
-function HierarchyTree({ owner, selectedNodeIds, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeIds: string[]; implicitRootNodeId?: string }) {
+function HierarchyTree({ owner, prefabs, selectedNodeIds, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; prefabs: ProjectDocument["prefabs"]; selectedNodeIds: string[]; implicitRootNodeId?: string }) {
   const selectNode = useEditorStore((state) => state.selectNode);
   const moveNode = useEditorStore((state) => state.moveNode);
   const draggedNodeIdRef = useRef<string | null>(null);
@@ -420,11 +419,38 @@ function HierarchyTree({ owner, selectedNodeIds, implicitRootNodeId }: { owner: 
           onClick={(event) => selectNode(node.id, event.shiftKey)}
           aria-pressed={selectedNodeIds.includes(node.id)}
         >
-          {node.name} <span>({node.type})</span>
+          {node.name} <span>({node.type === "prefab-instance" ? "preset" : node.type})</span>
         </button>
-        {node.children.length > 0 && <ul>{node.children.map((childId) => renderNode(childId, depth + 1))}</ul>}
+        {node.type === "prefab-instance"
+          ? renderPrefabChildren(node.prefabId, depth + 1)
+          : node.children.length > 0 && <ul>{node.children.map((childId) => renderNode(childId, depth + 1))}</ul>}
       </li>
     );
+  };
+
+  const renderPrefabChildren = (prefabId: string, depth: number): ReactNode => {
+    const prefab = prefabs.find((candidate) => candidate.id === prefabId);
+    if (prefab === undefined) return null;
+    const prefabNodesById = new Map(prefab.nodes.map((node) => [node.id, node]));
+    const renderLockedNode = (nodeId: string, nestedDepth: number): ReactNode => {
+      const node = prefabNodesById.get(nodeId);
+      if (node === undefined) return null;
+      return <li key={node.id}>
+        <button
+          type="button"
+          className={`tree-node tree-node-locked${selectedNodeIds.includes(node.id) ? " tree-node-selected" : ""}`}
+          style={{ paddingInlineStart: `${nestedDepth * 16 + 12}px` }}
+          title="Preset content is read-only. Edit the preset to change it."
+          onClick={(event) => selectNode(node.id, event.shiftKey)}
+          aria-disabled="true"
+          aria-pressed={selectedNodeIds.includes(node.id)}
+        >
+          {node.name} <span>({node.type})</span>
+        </button>
+        {node.children.length > 0 && <ul>{node.children.map((childId) => renderLockedNode(childId, nestedDepth + 1))}</ul>}
+      </li>;
+    };
+    return <ul>{prefab.rootNodeIds.map((nodeId) => renderLockedNode(nodeId, depth))}</ul>;
   };
 
   return (
@@ -1205,13 +1231,11 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
       </div>
+      {editingPrefabName !== null && <div className="preset-editing-status">
+        <span>Editing preset: {editingPrefabName}</span>
+        <button type="button" onClick={finishEditingPrefab}>Done</button>
+      </div>}
       <div className="canvas-hud">
-        {editingPrefabName !== null && (
-          <>
-            <span className="editing-prefab-badge">Editing preset: {editingPrefabName}</span>
-            <button type="button" onClick={finishEditingPrefab}>Done</button>
-          </>
-        )}
         <button type="button" onClick={() => fitCameraRef.current?.()}>Fit</button>
         <span>{Math.round(zoom * 100)}%</span>
       </div>
@@ -1229,7 +1253,6 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
       const state = useEditorStore.getState();
       const key = event.key.toLowerCase();
       if (key === "m") {
-        if (state.editingPrefabId !== null) return;
         state.setViewMode(state.viewMode === "map" ? "single" : "map");
         return;
       }
@@ -1257,7 +1280,6 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
   }, [setActiveTool]);
 
   const setViewMode = useEditorStore((state) => state.setViewMode);
-  const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
     { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: "Q" },
     { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: "W" },
@@ -1286,7 +1308,6 @@ function ToolPanel({ activeTool, viewMode, setActiveTool }: { activeTool: Editor
         title="Map (M)"
         aria-label="Map (M)"
         aria-pressed={viewMode === "map"}
-        disabled={editingPrefabId !== null}
         onClick={() => setViewMode(viewMode === "map" ? "single" : "map")}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7v6H3zM14 5h7v9h-7zM3 14h7v5H3zM14 17h7v2h-7z" /></svg>
@@ -1337,8 +1358,13 @@ export function App() {
 
   const owner = editingPrefab ?? scene;
   const implicitRootNodeId = editingPrefab === undefined ? getSceneRoot(scene)?.id : undefined;
-  const selectedNode = owner.nodes.find((node) => node.id === selectedNodeId);
-  const deleteDisabled = selectedNode === undefined || (selectedNode.parentId === null && owner.rootNodeIds.length === 1);
+  const selectedSceneNode = owner.nodes.find((node) => node.id === selectedNodeId);
+  const selectedPrefabNode = editingPrefab === undefined && selectedSceneNode === undefined
+    ? document.prefabs.flatMap((prefab) => prefab.nodes).find((node) => node.id === selectedNodeId)
+    : undefined;
+  const selectedNode = selectedSceneNode ?? selectedPrefabNode;
+  const selectedNodeIsPresetContent = selectedPrefabNode !== undefined;
+  const deleteDisabled = selectedNode === undefined || selectedNodeIsPresetContent || (selectedNode.parentId === null && owner.rootNodeIds.length === 1);
   const viewport = scene.layout.referenceViewports[activeProfile];
 
   return (
@@ -1355,15 +1381,15 @@ export function App() {
       </header>
       <aside className="panel hierarchy-panel">
         <h1>Hierarchy</h1>
-        <WindowsSection document={document} sceneId={sceneId} disabled={editingPrefab !== undefined} />
-        <HierarchyTree owner={owner} selectedNodeIds={selectedNodeIds} implicitRootNodeId={implicitRootNodeId} />
+        <WindowsSection document={document} sceneId={editingPrefab === undefined ? sceneId : null} editingPrefab={editingPrefab !== undefined} />
+        <HierarchyTree owner={owner} prefabs={document.prefabs} selectedNodeIds={selectedNodeIds} implicitRootNodeId={implicitRootNodeId} />
         <div className="hierarchy-assets-action">
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
       <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
-      <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
+      <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
   );
 }

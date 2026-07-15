@@ -1,5 +1,5 @@
 import { migrateProjectDocument, type Asset, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
-import { Container, Graphics, Sprite, Text, Texture } from "pixi.js";
+import { Container, Graphics, Sprite, Text, Texture, type Ticker } from "pixi.js";
 import { AtlasAttachmentLoader, SkeletonJson, Spine, SpineTexture, TextureAtlas, type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 export type { SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 
@@ -226,9 +226,9 @@ export function assignAtlasPageTextures(atlas: TextureAtlas, textures: ReadonlyM
   }
 }
 
-/** Creates an auto-updating Spine display object for editor previews. */
-export function createSpineView(skeletonData: SkeletonData, animation?: string): Spine {
-  const spine = new Spine(skeletonData);
+/** Creates a Spine display object, optionally assigning it to a specific renderer ticker. */
+export function createSpineView(skeletonData: SkeletonData, animation?: string, options: { autoUpdate?: boolean; ticker?: Ticker } = {}): Spine {
+  const spine = new Spine({ skeletonData, autoUpdate: options.autoUpdate ?? true, ticker: options.ticker });
   if (animation !== undefined && skeletonData.findAnimation(animation) !== null) spine.state.setAnimation(0, animation, true);
   return spine;
 }

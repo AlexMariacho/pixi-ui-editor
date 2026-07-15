@@ -57,6 +57,34 @@ function NumberField({ label, value, step, onChange }: { label: string; value: n
   return <InspectorField label={label}><input type="number" value={text} step={step} onChange={applyValue} /></InspectorField>;
 }
 
+function NodeNameField({ nodeId, value, onCommit }: { nodeId: string; value: string; onCommit: (nodeId: string, value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (draft.trim() === "") {
+      setDraft(value);
+      return;
+    }
+    if (draft !== value) onCommit(nodeId, draft);
+  };
+
+  return <InspectorField label="Name"><input
+    type="text"
+    value={draft}
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={commit}
+    onKeyDown={(event) => {
+      if (event.key === "Enter") event.currentTarget.blur();
+      if (event.key === "Escape") {
+        setDraft(value);
+        event.currentTarget.blur();
+      }
+    }}
+  /></InspectorField>;
+}
+
 const formatDegrees = (value: number) => String(Math.round(value * 100) / 100);
 
 /** Rotation is stored in radians (PixiJS uses radians natively) but edited in degrees, unrestricted like Pixi itself: negative and >360 values are valid and are not wrapped. */
@@ -114,7 +142,7 @@ function PivotField({ pivotX, pivotY, onChange }: { pivotX: number; pivotY: numb
   </>;
 }
 
-export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }) {
+export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UINode | undefined; readOnly?: boolean }) {
   const updateNode = useEditorStore((state) => state.updateNode);
   const assets = useEditorStore((state) => state.document.assets);
   const activeProfile = useEditorStore((state) => state.activeProfile);
@@ -148,7 +176,9 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
 
   const imageAssets = assets.filter((asset) => asset.type === "image");
   const resolvedTransform = resolveProfileTransform(selectedNode, activeProfile).transform;
-  const owner = getEditingTarget(document, { sceneId, editingPrefabId });
+  const owner = readOnly
+    ? document.prefabs.find((prefab) => prefab.nodes.some((node) => node.id === selectedNode.id))
+    : getEditingTarget(document, { sceneId, editingPrefabId });
   const worldTransform = owner === undefined ? undefined : getNodeWorldMatrix(owner, selectedNode.id, activeProfile);
   const updateTransform = (patch: Partial<UINode["transform"]>) => {
     updateNodeProfileTransform(selectedNode.id, patch);
@@ -157,9 +187,10 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
   const pivotX = resolvedTransform.pivotX ?? 0;
   const pivotY = resolvedTransform.pivotY ?? 0;
 
-  return <div className="inspector-content">
+  return <fieldset className="inspector-content" disabled={readOnly}>
+    {readOnly && <p className="inspector-empty">Preset content is read-only. Use Edit in Presets to change it.</p>}
     <InspectorWindow title="Node">
-      <InspectorField label="Name"><input type="text" value={selectedNode.name} onChange={(event) => updateNode(selectedNode.id, { name: event.target.value })} /></InspectorField>
+      <NodeNameField nodeId={selectedNode.id} value={selectedNode.name} onCommit={(nodeId, name) => updateNode(nodeId, { name })} />
       <InspectorField label="Visible"><input type="checkbox" checked={selectedNode.visible} onChange={(event) => updateNode(selectedNode.id, { visible: event.target.checked })} /></InspectorField>
       <InspectorField label="Type"><output>{selectedNode.type}</output></InspectorField>
       <InspectorField label="ID"><output className="inspector-id">{selectedNode.id}</output></InspectorField>
@@ -213,5 +244,5 @@ export function Inspector({ selectedNode }: { selectedNode: UINode | undefined }
     {selectedNode.type === "text" && <InspectorWindow title="Text">
       <InspectorField label="Text"><input type="text" value={selectedNode.text} onChange={(event) => updateNode(selectedNode.id, { text: event.target.value })} /></InspectorField>
     </InspectorWindow>}
-  </div>;
+  </fieldset>;
 }

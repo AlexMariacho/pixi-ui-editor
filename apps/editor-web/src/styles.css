@@ -141,7 +141,8 @@ body { margin: 0; }
 .toolbar-actions button,
 .assets-window-trigger,
 .canvas-bottom-toolbar button,
-.canvas-hud button {
+.canvas-hud button,
+.preset-editing-status button {
   padding: 4px 10px;
   color: var(--text);
   font: inherit;
@@ -155,7 +156,8 @@ body { margin: 0; }
 .toolbar-actions button:hover:not(:disabled),
 .assets-window-trigger:hover,
 .canvas-bottom-toolbar button:hover,
-.canvas-hud button:hover { background: var(--bg-button-hover); border-color: #5a5a5a; }
+.canvas-hud button:hover,
+.preset-editing-status button:hover { background: var(--bg-button-hover); border-color: #5a5a5a; }
 
 .toolbar-actions button:disabled { color: #5a5a5a; border-color: var(--border); cursor: default; }
 
@@ -350,6 +352,9 @@ body { margin: 0; }
 
 .tree-node-selected span { color: #a8c7e8; }
 
+.tree-node-locked { color: var(--text-muted); cursor: default; }
+.tree-node-locked:hover { background: var(--bg-row-hover); }
+
 .tree-node-drop-inside,
 .tree-node-drop-inside:hover {
   color: var(--text-bright);
@@ -403,6 +408,8 @@ body { margin: 0; }
 }
 
 .floating-window-titlebar h2 {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   color: var(--text-muted);
   font-size: 11px;
@@ -601,6 +608,12 @@ body { margin: 0; }
 
 .asset-grid-tile .asset-actions button { min-width: 0; padding: 3px 2px; }
 
+.image-preview { padding: 10px 12px; border-top: 1px solid var(--border); }
+
+.image-preview-frame { display: flex; width: 220px; height: 180px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
+
+.image-preview-frame img { width: 100%; height: 100%; object-fit: contain; }
+
 .spine-preview { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px; }
 
 .spine-preview select { margin-left: 6px; max-width: 160px; }
@@ -621,7 +634,7 @@ body { margin: 0; }
 
 /* Inspector */
 
-.inspector-content { display: grid; }
+.inspector-content { display: grid; min-width: 0; margin: 0; padding: 0; border: 0; }
 
 .inspector-empty { margin: 0; padding: 12px; color: var(--text-muted); }
 
@@ -847,13 +860,16 @@ body { margin: 0; }
 
 .preset-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Preset editing HUD */
+/* Preset editing status stays separate from the Fit/zoom group. */
 
-.editing-prefab-badge {
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: #4c9aff;
-  color: #10131a;
+.preset-editing-status {
+  position: absolute;
+  right: 12px;
+  bottom: 54px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
   font-size: 12px;
-  font-weight: 600;
 }

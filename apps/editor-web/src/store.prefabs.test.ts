@@ -4,11 +4,10 @@ import { useEditorStore } from "./store.js";
 import { initialDocument, textNodeId } from "./store.test-utils.js";
 
 describe("prefabs", () => {
-  it("createPrefabFromNode creates a valid preset copy and leaves the source subtree untouched", () => {
-    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
-    const sourceRoot = initialDocument.scenes[0]!.nodes.find((node) => node.id === rootNodeId)!;
+  it("createPrefabFromNode creates a valid preset copy and replaces the source subtree with its preset instance", () => {
+    const sourceRoot = initialDocument.scenes[0]!.nodes.find((node) => node.id === textNodeId)!;
 
-    const error = useEditorStore.getState().createPrefabFromNode(rootNodeId);
+    const error = useEditorStore.getState().createPrefabFromNode(textNodeId);
 
     expect(error).toBeNull();
     const state = useEditorStore.getState();
@@ -18,7 +17,25 @@ describe("prefabs", () => {
     expect(prefab.exposedProperties).toEqual([]);
     expect(prefabRoot).toMatchObject({ parentId: null, transform: expect.objectContaining({ x: 0, y: 0 }) });
     expect(prefab.nodes.some((node) => initialDocument.scenes[0]!.nodes.some((sourceNode) => sourceNode.id === node.id))).toBe(false);
-    expect(state.document.scenes).toEqual(initialDocument.scenes);
+    const instance = state.document.scenes[0]!.nodes.find((node) => node.type === "prefab-instance");
+    expect(instance).toMatchObject({ name: sourceRoot.name, prefabId: prefab.id, parentId: sourceRoot.parentId, transform: sourceRoot.transform });
+    expect(state.document.scenes[0]!.nodes.some((node) => node.id === textNodeId)).toBe(false);
+    expect(state.selectedNodeId).toBe(instance?.id);
+    expect(validateProjectDocument(state.document).valid).toBe(true);
+  });
+
+  it("promotes a container transform to the preset instance without retaining a duplicate container", () => {
+    const sourceRoot = initialDocument.scenes[0]!.nodes.find((node) => node.id === initialDocument.scenes[0]!.rootNodeIds[0])!;
+
+    const error = useEditorStore.getState().createPrefabFromNode(sourceRoot.id);
+
+    expect(error).toBeNull();
+    const state = useEditorStore.getState();
+    const prefab = state.document.prefabs.at(-1)!;
+    const instance = state.document.scenes[0]!.nodes.find((node) => node.type === "prefab-instance")!;
+    expect(prefab.nodes.some((node) => node.name === sourceRoot.name && node.type === "container")).toBe(false);
+    expect(prefab.rootNodeIds).toHaveLength(sourceRoot.children.length);
+    expect(instance.transform).toEqual(sourceRoot.transform);
     expect(validateProjectDocument(state.document).valid).toBe(true);
   });
 
@@ -48,5 +65,26 @@ describe("prefabs", () => {
     expect(useEditorStore.getState().document).toEqual(beforeRejectedDeletion);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("leaves preset editing when a window is selected", () => {
+    useEditorStore.getState().createPrefabFromNode(textNodeId);
+    const prefabId = useEditorStore.getState().document.prefabs.at(-1)!.id;
+    const sceneId = useEditorStore.getState().document.scenes[0]!.id;
+
+    useEditorStore.getState().setEditingPrefabId(prefabId);
+    useEditorStore.getState().selectScene(sceneId);
+
+    expect(useEditorStore.getState()).toMatchObject({ sceneId, editingPrefabId: null, selectedNodeId: null, selectedNodeIds: [] });
+  });
+
+  it("leaves preset editing when opening map", () => {
+    useEditorStore.getState().createPrefabFromNode(textNodeId);
+    const prefabId = useEditorStore.getState().document.prefabs.at(-1)!.id;
+
+    useEditorStore.getState().setEditingPrefabId(prefabId);
+    useEditorStore.getState().setViewMode("map");
+
+    expect(useEditorStore.getState()).toMatchObject({ editingPrefabId: null, viewMode: "map", selectedNodeId: null, selectedNodeIds: [], activeTool: "pan" });
   });
 });

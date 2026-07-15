@@ -174,11 +174,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   setActiveTool: (tool) => set({ activeTool: tool }),
   setViewMode: (mode) => set((state) => {
     if (mode === state.viewMode) return state;
-    if (mode === "map" && state.editingPrefabId !== null) {
-      console.warn("The map mode is unavailable while a preset is being edited.");
-      return state;
-    }
-    return mode === "map" ? { viewMode: mode, selectedNodeIds: [], selectedNodeId: null, activeTool: "pan" } : { viewMode: mode };
+    return mode === "map"
+      ? { viewMode: mode, editingPrefabId: null, selectedNodeIds: [], selectedNodeId: null, activeTool: "pan" }
+      : { viewMode: mode };
   }),
   selectNode: (id, additive = false) => set((state) => {
     if (id === null) return { selectedNodeIds: [], selectedNodeId: null };
@@ -203,7 +201,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       console.warn(`Cannot select scene '${sceneId}': it does not exist.`);
       return state;
     }
-    return { sceneId, selectedNodeIds: [], selectedNodeId: null };
+    return { sceneId, editingPrefabId: null, selectedNodeIds: [], selectedNodeId: null };
   }),
   addScene: (name) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -682,27 +680,60 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       // Копия поддерева получает новые stable ID: ID глобально уникальны в документе.
-      const idBySourceId = new Map(subtree.map((node) => [node.id, createStableId()]));
-      const copies = subtree.map((node) => {
+      const sourceIsContainer = sourceNode.type === "container";
+      const prefabSourceNodes = sourceIsContainer ? subtree.filter((node) => node.id !== sourceNode.id) : subtree;
+      const idBySourceId = new Map(prefabSourceNodes.map((node) => [node.id, createStableId()]));
+      const copies = prefabSourceNodes.map((node) => {
         const copy = structuredClone(node);
         copy.id = idBySourceId.get(node.id)!;
-        copy.parentId = node.id === sourceNode.id ? null : idBySourceId.get(node.parentId!)!;
+        copy.parentId = node.id === sourceNode.id || node.parentId === sourceNode.id
+          ? null
+          : idBySourceId.get(node.parentId!)!;
         copy.children = node.children.map((childId) => idBySourceId.get(childId)!);
         if (node.id === sourceNode.id) copy.transform = { ...copy.transform, x: 0, y: 0 };
         return copy;
       });
 
+      const prefabId = createStableId();
       candidate.prefabs.push({
-        id: createStableId(),
+        id: prefabId,
         name: sourceNode.name,
-        rootNodeIds: [idBySourceId.get(sourceNode.id)!],
+        rootNodeIds: sourceIsContainer
+          ? sourceNode.children.map((childId) => idBySourceId.get(childId)!)
+          : [idBySourceId.get(sourceNode.id)!],
         nodes: copies,
         exposedProperties: [],
       });
 
+      const sourceParent = sourceNode.parentId === null
+        ? undefined
+        : nodesById.get(sourceNode.parentId);
+      const sourceSiblings = sourceParent?.children ?? scene.rootNodeIds;
+      const sourceIndex = sourceSiblings.indexOf(sourceNode.id);
+      if (sourceIndex < 0) {
+        error = `Cannot create a preset from '${nodeId}': its hierarchy position is inconsistent.`;
+        return state;
+      }
+
+      const instance: UINode = {
+        id: createStableId(),
+        name: sourceNode.name,
+        type: "prefab-instance",
+        prefabId,
+        parentId: sourceNode.parentId,
+        children: [],
+        visible: sourceNode.visible,
+        transform: structuredClone(sourceNode.transform),
+        ...(sourceNode.layoutOverrides === undefined ? {} : { layoutOverrides: structuredClone(sourceNode.layoutOverrides) }),
+      };
+      const subtreeIds = new Set(subtree.map((node) => node.id));
+      scene.nodes = scene.nodes.filter((node) => !subtreeIds.has(node.id));
+      scene.nodes.push(instance);
+      sourceSiblings.splice(sourceIndex, 1, instance.id);
+
       const committed = commitCandidate(state, candidate, "Preset creation was rejected because it makes the project document invalid.");
       if (committed === state) error = "Preset creation was rejected because it makes the project document invalid.";
-      return committed;
+      return committed === state ? state : { ...committed, selectedNodeIds: [instance.id], selectedNodeId: instance.id };
     });
     return error;
   },
