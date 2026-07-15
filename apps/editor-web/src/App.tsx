@@ -4,7 +4,8 @@ import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/s
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
 import { getEditingTarget, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
 import { Inspector } from "./Inspector.js";
-import { loadEditorSceneSpines, loadEditorSceneTextures } from "./assets.js";
+import { loadEditorSceneSpines, loadEditorSceneTextures, resolveFileUrl } from "./assets.js";
+import { downloadProjectPackage } from "./exportPackage.js";
 import { AssetsWindow } from "./AssetPanel.js";
 import { NODE_DRAG_TYPE, PREFAB_DRAG_TYPE, PresetsWindow } from "./PresetsPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
@@ -1006,6 +1007,7 @@ export function App() {
         <ScreenResolutionsMenu activeProfile={activeProfile} viewport={viewport} setActiveProfile={setActiveProfile} updateReferenceViewport={updateReferenceViewport} />
         <span>{document.project.name}</span>
         <div className="toolbar-actions">
+          <button type="button" onClick={() => { void downloadProjectPackage(document, resolveFileUrl); }}>Export</button>
           <button type="button" className="toolbar-danger" disabled={deleteDisabled} onClick={() => selectedNodeId !== null && deleteNode(selectedNodeId)}>Delete</button>
           <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>

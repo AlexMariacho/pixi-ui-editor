@@ -1,0 +1,37 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #101018;
+}
+
+canvas {
+  display: block;
+}
+
+.package-hint {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #e2e8f0;
+  font-family: system-ui, sans-serif;
+}
+
+.package-hint article {
+  max-width: 640px;
+  background: #1e1e2e;
+  border: 1px solid #3c3c50;
+  border-radius: 8px;
+  padding: 24px 32px;
+  line-height: 1.6;
+}
+
+.package-hint code {
+  background: #101018;
+  border-radius: 4px;
+  padding: 2px 6px;
+}

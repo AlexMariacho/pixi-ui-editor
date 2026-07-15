@@ -19,10 +19,10 @@ Pixi UI Editor — web-first редактор для сборки игровог
 - **Итерация 03 завершена**: editor-web переключает Horizontal/Vertical preview через transient `activeProfile`, transform и visibility редактируются независимо для обоих layout-профилей, а раздел Screen в toolbar сохраняет editable reference viewport активной ориентации с Desktop/Tablet/Mobile presets; решения зафиксированы в ADR 0003.
 - **Итерация 04 завершена**: editor-web отображает реальные image-textures, позволяет загружать image assets в localStorage, назначать asset image-node, заменять source с сохранением stable ID и удалять только неиспользуемые assets; решения зафиксированы в ADR 0004.
 - **Итерация 05 завершена**: editor-web получил плавающее окно Assets с list/grid-представлениями и отдельными UI-preferences, а также viewport-инструменты Pan / Select / Resize с profile-aware resize-ручками; решения зафиксированы в ADR 0005.
-- Остальные `apps/*` и пакеты, кроме `packages/schema` и `packages/runtime-pixi`, остаются запланированными заглушками.
+- **Итерация 06 завершена**: editor-web поддерживает Spine-ассеты (drag-and-drop, loop и frame scrubbing), несколько окон (Windows) с режимом Map, пресеты (prefab definitions + prefab-instance nodes с режимом редактирования) и кнопку Export, собирающую самодостаточный zip-пакет (`project.json` + `assets/<assetId>/<fileName>`, zip через `fflate`); `packages/runtime-pixi` даёт `resolveProfileForViewport` и `loadSceneView`; демо-приложение `examples/pixi-app` (ванильный Vite + PixiJS, без React) воспроизводит распакованный пакет из `public/package/`; решения зафиксированы в ADR 0006.
+- Остальные `apps/*` и пакеты, кроме `packages/schema` и `packages/runtime-pixi`, остаются запланированными заглушками; workspace также включает `examples/*`.
 - **CI намеренно отсутствует** (решение владельца проекта от июля 2026): GitHub Actions вернём после того, как появится работающее приложение. Не добавляйте workflow без явного запроса.
-- PixiJS и React подключены только в `apps/editor-web`; серверный framework ещё не выбран.
-- **TASK-023 Iteration 06 завершён**: Assets поддерживает HTML5 drag-and-drop image и Spine-ассетов на canvas с profile-aware координатами, созданием и немедленным выделением node; runtime нормализует Spine внутри технического Pixi-container по transform node, а Inspector даёт loop и transient frame scrubbing. Следующая задача — строго TASK-024 (Windows и map); остальные части Iteration 06 пока не реализованы.
+- React подключён только в `apps/editor-web`; PixiJS — в `apps/editor-web` и `examples/pixi-app`; серверный framework ещё не выбран.
 
 ## Рабочий процесс разработки
 

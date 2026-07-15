@@ -43,6 +43,11 @@ export function resolveProfileTransform(node: UINode, profile: LayoutProfileId):
   };
 }
 
+/** Picks the layout profile for a viewport using the document's aspect-ratio rule; the breakpoint itself is mobile. */
+export function resolveProfileForViewport(settings: ProjectDocument["settings"], width: number, height: number): LayoutProfileId {
+  return width / height <= settings.layoutProfileSelection.mobileMaxAspectRatio ? "mobile" : "desktop";
+}
+
 export function fitSpineToTransform(
   bounds: { x: number; y: number; width: number; height: number },
   transform: UINode["transform"],
@@ -293,6 +298,20 @@ export async function loadSceneSpines(
     }
   }
   return spines;
+}
+
+/** Loads a scene's textures and Spine data, then builds its display tree in one call. */
+export async function loadSceneView(
+  document: ProjectDocument,
+  sceneId: string,
+  profile: LayoutProfileId,
+  resolveFileUrl: FileUrlResolver,
+): Promise<{ root: Container; nodeViews: Map<string, Container> }> {
+  const [textures, spines] = await Promise.all([
+    loadSceneTextures(document, sceneId, (asset) => (asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined)),
+    loadSceneSpines(document, sceneId, resolveFileUrl),
+  ]);
+  return buildSceneView(document, sceneId, profile, textures, spines);
 }
 
 /** Loads one Spine asset, sharing parsed SkeletonData by skeleton file URI. */

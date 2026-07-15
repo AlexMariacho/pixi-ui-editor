@@ -10,3 +10,4 @@
 - [Итерация 03 — ориентация экрана и размеры viewport](tasks/iteration-03-orientation-and-viewports/README.md)
 - [Итерация 04 — реальные image-assets](tasks/iteration-04-image-assets/README.md)
 - [Итерация 05 — инструменты viewport и окно Assets](tasks/iteration-05-viewport-tools-and-assets-window/README.md)
+- [Итерация 06 — Spine, окна, пресеты и экспорт в PixiJS](tasks/iteration-06-spine-windows-presets-export/README.md)

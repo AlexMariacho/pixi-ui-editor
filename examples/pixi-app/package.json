@@ -1,5 +1,5 @@
 {
-  "name": "@pixi-ui-editor/editor-web",
+  "name": "@pixi-ui-editor/example-pixi-app",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,22 +7,14 @@
     "dev": "vite",
     "preview": "vite preview",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@pixi-ui-editor/runtime-pixi": "workspace:*",
     "@pixi-ui-editor/schema": "workspace:*",
-    "fflate": "^0.8.2",
-    "pixi.js": "^8.19.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "zustand": "^5.0.14"
+    "pixi.js": "^8.19.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.8",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
     "vite": "^7.3.1"
   }
 }

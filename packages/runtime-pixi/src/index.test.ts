@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { serializeProjectDocument } from "@pixi-ui-editor/schema";
 import { Sprite, Texture } from "pixi.js";
 import { TextureAtlas } from "@esotericsoftware/spine-pixi-v8";
-import { assignAtlasPageTextures, buildSceneView, fitSpineToTransform, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileTransform } from "./index.js";
+import { assignAtlasPageTextures, buildSceneView, fitSpineToTransform, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileForViewport, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -37,6 +37,14 @@ describe("sample project loader smoke test", () => {
 
     withDesktopOverride.layoutOverrides.desktop!.visible = false;
     expect(resolveProfileTransform(withDesktopOverride, "desktop").visible).toBe(false);
+  });
+
+  it("resolves the viewport profile on both sides of the breakpoint and picks mobile exactly on it", () => {
+    const settings = { layoutProfileSelection: { mode: "aspect-ratio" as const, mobileMaxAspectRatio: 1 } };
+
+    expect(resolveProfileForViewport(settings, 1920, 1080)).toBe("desktop");
+    expect(resolveProfileForViewport(settings, 390, 844)).toBe("mobile");
+    expect(resolveProfileForViewport(settings, 1000, 1000)).toBe("mobile");
   });
 
   it("fits Spine setup bounds to the node transform dimensions", () => {
