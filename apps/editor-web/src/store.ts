@@ -25,6 +25,7 @@ export type EditorState = {
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
   viewMode: ViewMode;
+  selectedNodeIds: string[];
   selectedNodeId: string | null;
   editingPrefabId: string | null;
   spineFrameRequests: Record<string, number>;
@@ -33,7 +34,8 @@ export type EditorState = {
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
-  selectNode(id: string | null): void;
+  selectNode(id: string | null, additive?: boolean): void;
+  selectNodes(ids: string[], additive?: boolean): void;
   selectScene(sceneId: string): void;
   addScene(name?: string): void;
   renameScene(sceneId: string, name: string): void;
@@ -41,6 +43,7 @@ export type EditorState = {
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
+  updateNodeProfileTransforms(updates: { nodeId: string; patch: Partial<UINode["transform"]> }[]): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
@@ -161,6 +164,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   activeProfile: "desktop",
   activeTool: "select",
   viewMode: "single",
+  selectedNodeIds: [],
   selectedNodeId: null,
   editingPrefabId: null,
   spineFrameRequests: {},
@@ -174,15 +178,32 @@ export const useEditorStore = create<EditorState>((set) => ({
       console.warn("The map mode is unavailable while a preset is being edited.");
       return state;
     }
-    return mode === "map" ? { viewMode: mode, selectedNodeId: null, activeTool: "pan" } : { viewMode: mode };
+    return mode === "map" ? { viewMode: mode, selectedNodeIds: [], selectedNodeId: null, activeTool: "pan" } : { viewMode: mode };
   }),
-  selectNode: (id) => set({ selectedNodeId: id }),
+  selectNode: (id, additive = false) => set((state) => {
+    if (id === null) return { selectedNodeIds: [], selectedNodeId: null };
+    if (!additive) return { selectedNodeIds: [id], selectedNodeId: id };
+    if (state.selectedNodeIds.includes(id)) {
+      const selectedNodeIds = state.selectedNodeIds.filter((candidateId) => candidateId !== id);
+      return { selectedNodeIds, selectedNodeId: selectedNodeIds.at(-1) ?? null };
+    }
+    return { selectedNodeIds: [...state.selectedNodeIds, id], selectedNodeId: id };
+  }),
+  selectNodes: (ids, additive = false) => set((state) => {
+    const uniqueIds = [...new Set(ids)];
+    if (!additive) return { selectedNodeIds: uniqueIds, selectedNodeId: uniqueIds.at(-1) ?? null };
+    const selectedNodeIds = [...state.selectedNodeIds];
+    for (const id of uniqueIds) {
+      if (!selectedNodeIds.includes(id)) selectedNodeIds.push(id);
+    }
+    return { selectedNodeIds, selectedNodeId: selectedNodeIds.at(-1) ?? null };
+  }),
   selectScene: (sceneId) => set((state) => {
     if (!state.document.scenes.some((scene) => scene.id === sceneId)) {
       console.warn(`Cannot select scene '${sceneId}': it does not exist.`);
       return state;
     }
-    return { sceneId, selectedNodeId: null };
+    return { sceneId, selectedNodeIds: [], selectedNodeId: null };
   }),
   addScene: (name) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -206,7 +227,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     candidate.scenes.push(scene);
 
     const committed = commitCandidate(state, candidate, "Window creation was rejected because it makes the project document invalid.");
-    return committed === state ? state : { ...committed, sceneId: scene.id, selectedNodeId: null };
+    return committed === state ? state : { ...committed, sceneId: scene.id, selectedNodeIds: [], selectedNodeId: null };
   }),
   renameScene: (sceneId, name) => set((state) => {
     const trimmedName = name.trim();
@@ -242,7 +263,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     const committed = commitCandidate(state, candidate, "Window deletion was rejected because it makes the project document invalid.");
     if (committed === state) return state;
     if (state.sceneId !== sceneId) return committed;
-    return { ...committed, sceneId: candidate.scenes[0]!.id, selectedNodeId: null };
+    return { ...committed, sceneId: candidate.scenes[0]!.id, selectedNodeIds: [], selectedNodeId: null };
   }),
   updateReferenceViewport: (profile, viewport) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -291,6 +312,33 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     return commitCandidate(state, candidate, "Node transform update was rejected because it makes the project document invalid.");
+  }),
+  updateNodeProfileTransforms: (updates) => set((state) => {
+    if (updates.length === 0) return state;
+    const candidate = structuredClone(state.document);
+    const target = getEditingTarget(candidate, state);
+    if (target === undefined) {
+      console.warn("Cannot update node transforms: the editing target does not exist.");
+      return state;
+    }
+
+    const nodesById = new Map(target.nodes.map((node) => [node.id, node]));
+    for (const { nodeId, patch } of updates) {
+      const node = nodesById.get(nodeId);
+      if (node === undefined) {
+        console.warn(`Cannot update node transforms: node '${nodeId}' does not exist in the editing target.`);
+        return state;
+      }
+      if (state.activeProfile === "desktop") {
+        node.transform = { ...node.transform, ...patch };
+      } else {
+        node.layoutOverrides ??= {};
+        node.layoutOverrides.mobile ??= {};
+        node.layoutOverrides.mobile.transform = { ...node.layoutOverrides.mobile.transform, ...patch };
+      }
+    }
+
+    return commitCandidate(state, candidate, "Node transform updates were rejected because they make the project document invalid.");
   }),
   setNodeOrientationVisibility: (nodeId, profile, visible) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -488,7 +536,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     else sceneRoot.children.push(node.id);
 
     const committed = commitCandidate(state, candidate, "Asset node creation was rejected because it makes the project document invalid.");
-    return committed === state ? state : { ...committed, selectedNodeId: node.id };
+    return committed === state ? state : { ...committed, selectedNodeIds: [node.id], selectedNodeId: node.id };
   }),
   moveNode: (nodeId, placement) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -600,7 +648,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     const committed = commitCandidate(state, candidate, "Node deletion was rejected because it makes the project document invalid.");
-    return committed === state ? state : { ...committed, selectedNodeId: null };
+    return committed === state ? state : { ...committed, selectedNodeIds: [], selectedNodeId: null };
   }),
   createPrefabFromNode: (nodeId) => {
     let error: string | null = null;
@@ -689,7 +737,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     else sceneRoot.children.push(node.id);
 
     const committed = commitCandidate(state, candidate, "Preset instance creation was rejected because it makes the project document invalid.");
-    return committed === state ? state : { ...committed, selectedNodeId: node.id };
+    return committed === state ? state : { ...committed, selectedNodeIds: [node.id], selectedNodeId: node.id };
   }),
   renamePrefab: (prefabId, name) => set((state) => {
     const trimmedName = name.trim();
@@ -728,22 +776,22 @@ export const useEditorStore = create<EditorState>((set) => ({
     candidate.prefabs.splice(prefabIndex, 1);
     const committed = commitCandidate(state, candidate, "Preset deletion was rejected because it makes the project document invalid.");
     if (committed === state) return state;
-    return state.editingPrefabId === prefabId ? { ...committed, editingPrefabId: null, selectedNodeId: null } : committed;
+    return state.editingPrefabId === prefabId ? { ...committed, editingPrefabId: null, selectedNodeIds: [], selectedNodeId: null } : committed;
   }),
   setEditingPrefabId: (prefabId) => set((state) => {
-    if (prefabId === null) return { editingPrefabId: null, selectedNodeId: null };
+    if (prefabId === null) return { editingPrefabId: null, selectedNodeIds: [], selectedNodeId: null };
     if (!state.document.prefabs.some((prefab) => prefab.id === prefabId)) {
       console.warn(`Cannot edit preset '${prefabId}': it does not exist.`);
       return state;
     }
-    return { editingPrefabId: prefabId, selectedNodeId: null, viewMode: "single" };
+    return { editingPrefabId: prefabId, selectedNodeIds: [], selectedNodeId: null, viewMode: "single" };
   }),
   resetToSample: () => set(() => {
     if (typeof localStorage !== "undefined") {
       skipNextPersistence = true;
       localStorage.removeItem(DOCUMENT_STORAGE_KEY);
     }
-    return { document: structuredClone(sampleDocument), sceneId: firstScene.id, selectedNodeId: null, editingPrefabId: null };
+    return { document: structuredClone(sampleDocument), sceneId: firstScene.id, selectedNodeIds: [], selectedNodeId: null, editingPrefabId: null };
   }),
 }));
 

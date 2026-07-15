@@ -303,7 +303,7 @@ function WindowsSection({ document, sceneId, disabled }: { document: ProjectDocu
 
 type HierarchyDropMode = "before" | "inside" | "after";
 
-function HierarchyTree({ owner, selectedNodeId, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeId: string | null; implicitRootNodeId?: string }) {
+function HierarchyTree({ owner, selectedNodeIds, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; selectedNodeIds: string[]; implicitRootNodeId?: string }) {
   const selectNode = useEditorStore((state) => state.selectNode);
   const moveNode = useEditorStore((state) => state.moveNode);
   const draggedNodeIdRef = useRef<string | null>(null);
@@ -362,7 +362,7 @@ function HierarchyTree({ owner, selectedNodeId, implicitRootNodeId }: { owner: {
       <li key={node.id}>
         <button
           type="button"
-          className={`tree-node${node.id === selectedNodeId ? " tree-node-selected" : ""}${dropTarget?.nodeId === node.id ? ` tree-node-drop-${dropTarget.mode}` : ""}`}
+          className={`tree-node${selectedNodeIds.includes(node.id) ? " tree-node-selected" : ""}${dropTarget?.nodeId === node.id ? ` tree-node-drop-${dropTarget.mode}` : ""}`}
           style={{ paddingInlineStart: `${depth * 16 + 12}px` }}
           draggable
           title="Drag to reorder or make this node a child of another node"
@@ -393,7 +393,8 @@ function HierarchyTree({ owner, selectedNodeId, implicitRootNodeId }: { owner: {
             const mode = dropTarget?.nodeId === node.id && dropTarget.mode !== "root" ? dropTarget.mode : "inside";
             dropOnNode(event, node, mode);
           }}
-          onClick={() => selectNode(node.id)}
+          onClick={(event) => selectNode(node.id, event.shiftKey)}
+          aria-pressed={selectedNodeIds.includes(node.id)}
         >
           {node.name} <span>({node.type})</span>
         </button>
@@ -462,12 +463,13 @@ function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMo
   });
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
   activeTool: EditorTool;
   viewMode: ViewMode;
+  selectedNodeIds: string[];
   selectedNodeId: string | null;
   editingPrefabName: string | null;
   spineFrameRequest: number | undefined;
@@ -494,15 +496,17 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   const renderedViewModeRef = useRef<ViewMode | null>(null);
   const fitCameraRef = useRef<(() => void) | null>(null);
   const dragRef = useRef<{
-    nodeId: string;
-    offsetX: number;
-    offsetY: number;
-    startX: number;
-    startY: number;
-    x: number;
-    y: number;
-    pivotX: number;
-    pivotY: number;
+    entries: {
+      nodeId: string;
+      pointerStartX: number;
+      pointerStartY: number;
+      startX: number;
+      startY: number;
+      x: number;
+      y: number;
+      pivotX: number;
+      pivotY: number;
+    }[];
   } | null>(null);
   const resizeDragRef = useRef<{
     handle: ResizeHandle;
@@ -518,7 +522,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     viewPositionY: number;
     patch: Partial<UINode["transform"]>;
   } | null>(null);
-  const startDragRef = useRef<((nodeId: string, nodeView: Container, event: FederatedPointerEvent) => void) | null>(null);
+  const startDragRef = useRef<((nodeId: string, event: FederatedPointerEvent) => void) | null>(null);
   const startResizeRef = useRef<((handle: ResizeHandle, event: FederatedPointerEvent) => void) | null>(null);
   const [application, setApplication] = useState<Application | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -534,19 +538,9 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     selectionGraphics.clear();
     const resizeHandles = resizeHandlesRef.current;
     resizeHandles?.removeChildren().forEach((child) => child.destroy());
-    const nodeId = useEditorStore.getState().selectedNodeId;
-    if (nodeId === null) return;
-
-    const nodeView = nodeViewsRef.current.get(nodeId);
-    if (nodeView === undefined || nodeView.destroyed) return;
-    if (!nodeView.visible) return;
-
     const editorState = useEditorStore.getState();
     const owner = getEditingTarget(editorState.document, editorState);
     if (owner === undefined) return;
-    const node = owner.nodes.find((candidate) => candidate.id === nodeId);
-    if (node === undefined) return;
-
     const nodesById = new Map(owner.nodes.map((candidate) => [candidate.id, candidate]));
     const collectContainerContentBounds = (container: UINode): CanvasBounds[] => container.children.flatMap((childId) => {
       const child = nodesById.get(childId);
@@ -562,14 +556,21 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       return [nodeRectBounds(childView, childTransform.width, childTransform.height)];
     });
 
-    const { transform } = resolveProfileTransform(node, editorState.activeProfile);
-    const bounds = node.type === "container"
-      ? unionBounds(collectContainerContentBounds(node))
-        ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
-      : nodeRectBounds(nodeView, transform.width, transform.height);
-    selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
+    const selectedBounds = editorState.selectedNodeIds.flatMap((nodeId) => {
+      const node = nodesById.get(nodeId);
+      const nodeView = nodeViewsRef.current.get(nodeId);
+      if (node === undefined || nodeView === undefined || nodeView.destroyed || !nodeView.visible) return [];
+      const { transform } = resolveProfileTransform(node, editorState.activeProfile);
+      const bounds = node.type === "container"
+        ? unionBounds(collectContainerContentBounds(node))
+          ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
+        : nodeRectBounds(nodeView, transform.width, transform.height);
+      selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
+      return [{ node, nodeView, bounds }];
+    });
 
-    if (resizeHandles === null) return;
+    if (resizeHandles === null || selectedBounds.length !== 1) return;
+    const [{ node, nodeView, bounds }] = selectedBounds;
     if (node.type === "container") {
       const matrix = nodeView.getGlobalTransform();
       selectionGraphics
@@ -588,7 +589,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       moveHandle.on("pointerdown", (event) => {
         if (event.button !== 0 || useEditorStore.getState().activeTool === "pan") return;
         event.stopPropagation();
-        startDragRef.current?.(node.id, nodeView, event);
+        startDragRef.current?.(node.id, event);
       });
       resizeHandles.addChild(moveHandle);
       return;
@@ -627,13 +628,80 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       overlay.eventMode = "none";
       const selectionGraphics = new Graphics();
       overlay.addChild(selectionGraphics);
+      const selectionAreaGraphics = new Graphics();
+      overlay.addChild(selectionAreaGraphics);
       const resizeHandles = new Container();
       resizeHandles.eventMode = "static";
       application.stage.addChild(world, overlay, resizeHandles);
       application.stage.eventMode = "static";
       application.stage.hitArea = application.screen;
+      let selectionArea: { startX: number; startY: number; currentX: number; currentY: number; additive: boolean } | null = null;
+      const drawSelectionArea = () => {
+        selectionAreaGraphics.clear();
+        if (selectionArea === null) return;
+        const x = Math.min(selectionArea.startX, selectionArea.currentX);
+        const y = Math.min(selectionArea.startY, selectionArea.currentY);
+        const width = Math.abs(selectionArea.currentX - selectionArea.startX);
+        const height = Math.abs(selectionArea.currentY - selectionArea.startY);
+        selectionAreaGraphics.rect(x, y, width, height).fill({ color: SELECTION_COLOR, alpha: 0.12 }).stroke({ width: 1, color: SELECTION_COLOR });
+      };
+      const moveSelectionArea = (event: FederatedPointerEvent) => {
+        if (selectionArea === null) return;
+        selectionArea.currentX = event.global.x;
+        selectionArea.currentY = event.global.y;
+        drawSelectionArea();
+      };
+      const finishSelectionArea = () => {
+        if (selectionArea === null) return;
+        const area = {
+          x: Math.min(selectionArea.startX, selectionArea.currentX),
+          y: Math.min(selectionArea.startY, selectionArea.currentY),
+          width: Math.abs(selectionArea.currentX - selectionArea.startX),
+          height: Math.abs(selectionArea.currentY - selectionArea.startY),
+        };
+        const state = useEditorStore.getState();
+        const owner = getEditingTarget(state.document, state);
+        const technicalRootId = state.editingPrefabId === null && owner !== undefined && "layout" in owner ? getSceneRoot(owner)?.id : undefined;
+        const nodesById = new Map(owner?.nodes.map((node) => [node.id, node]) ?? []);
+        const collectContainerContentBounds = (container: UINode): CanvasBounds[] => container.children.flatMap((childId) => {
+          const child = nodesById.get(childId);
+          const childView = nodeViewsRef.current.get(childId);
+          if (child === undefined || childView === undefined || childView.destroyed || !childView.visible) return [];
+          if (child.type === "container") {
+            const nestedBounds = collectContainerContentBounds(child);
+            return nestedBounds.length > 0
+              ? nestedBounds
+              : [nodeRectBounds(childView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)];
+          }
+          const childTransform = resolveProfileTransform(child, state.activeProfile).transform;
+          return [nodeRectBounds(childView, childTransform.width, childTransform.height)];
+        });
+        const selectedIds = owner?.nodes.flatMap((node) => {
+          if (node.id === technicalRootId) return [];
+          const view = nodeViewsRef.current.get(node.id);
+          if (view === undefined || view.destroyed || !view.visible) return [];
+          const transform = resolveProfileTransform(node, state.activeProfile).transform;
+          const bounds = node.type === "container"
+            ? unionBounds(collectContainerContentBounds(node)) ?? nodeRectBounds(view, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE)
+            : nodeRectBounds(view, transform.width, transform.height);
+          const intersects = bounds.x <= area.x + area.width && bounds.x + bounds.width >= area.x
+            && bounds.y <= area.y + area.height && bounds.y + bounds.height >= area.y;
+          return intersects ? [node.id] : [];
+        }) ?? [];
+        state.selectNodes(selectedIds, selectionArea.additive);
+        selectionArea = null;
+        selectionAreaGraphics.clear();
+        application.stage.off("pointermove", moveSelectionArea);
+        application.stage.off("pointerup", finishSelectionArea);
+        application.stage.off("pointerupoutside", finishSelectionArea);
+      };
       application.stage.on("pointerdown", (event) => {
-        if (event.button === 0 && useEditorStore.getState().activeTool !== "pan") useEditorStore.getState().selectNode(null);
+        if (event.button !== 0 || useEditorStore.getState().activeTool === "pan") return;
+        selectionArea = { startX: event.global.x, startY: event.global.y, currentX: event.global.x, currentY: event.global.y, additive: event.shiftKey };
+        drawSelectionArea();
+        application.stage.on("pointermove", moveSelectionArea);
+        application.stage.on("pointerup", finishSelectionArea);
+        application.stage.on("pointerupoutside", finishSelectionArea);
       });
 
       const syncCamera = () => {
@@ -715,40 +783,64 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         application.stage.off("pointerupoutside", stopDrag);
         // Клик без перемещения не коммитит документ — иначе каждое выделение дергало бы store и подписчиков.
         // drag.x/y — это view.position (= transform.x + pivot-офсет), поэтому перед коммитом офсет вычитаем.
-        if (drag.x !== drag.startX || drag.y !== drag.startY) useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, { x: drag.x - drag.pivotX, y: drag.y - drag.pivotY });
+        const updates = drag.entries.flatMap((entry) => entry.x === entry.startX && entry.y === entry.startY
+          ? []
+          : [{ nodeId: entry.nodeId, patch: { x: entry.x - entry.pivotX, y: entry.y - entry.pivotY } }]);
+        useEditorStore.getState().updateNodeProfileTransforms(updates);
       };
       const moveDraggedNode = (event: FederatedPointerEvent) => {
         const drag = dragRef.current;
         if (drag === null) return;
 
         // Сцена пересобирается при каждом изменении документа, поэтому view ищем заново.
-        const nodeView = nodeViewsRef.current.get(drag.nodeId);
-        const parentView = nodeView?.parent;
-        if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
-
-        const localPosition = parentView.toLocal(event.global);
-        const x = Math.round((localPosition.x - drag.offsetX) * 100) / 100;
-        const y = Math.round((localPosition.y - drag.offsetY) * 100) / 100;
-        nodeView.position.set(x, y);
-        dragRef.current = { ...drag, x, y };
+        const entries = drag.entries.map((entry) => {
+          const nodeView = nodeViewsRef.current.get(entry.nodeId);
+          const parentView = nodeView?.parent;
+          if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return entry;
+          const localPosition = parentView.toLocal(event.global);
+          const x = Math.round((entry.startX + localPosition.x - entry.pointerStartX) * 100) / 100;
+          const y = Math.round((entry.startY + localPosition.y - entry.pointerStartY) * 100) / 100;
+          nodeView.position.set(x, y);
+          return { ...entry, x, y };
+        });
+        dragRef.current = { entries };
         redrawSelectionRef.current();
       };
-      startDragRef.current = (nodeId, nodeView, event) => {
-        const parentView = nodeView.parent;
-        if (parentView === null) return;
-
-        const localPosition = parentView.toLocal(event.global);
-        dragRef.current = {
-          nodeId,
-          offsetX: localPosition.x - nodeView.position.x,
-          offsetY: localPosition.y - nodeView.position.y,
-          startX: nodeView.position.x,
-          startY: nodeView.position.y,
-          x: nodeView.position.x,
-          y: nodeView.position.y,
-          pivotX: nodeView.pivot.x,
-          pivotY: nodeView.pivot.y,
+      startDragRef.current = (nodeId, event) => {
+        const state = useEditorStore.getState();
+        const owner = getEditingTarget(state.document, state);
+        if (owner === undefined) return;
+        const nodesById = new Map(owner.nodes.map((node) => [node.id, node]));
+        const selectedIds = state.selectedNodeIds.includes(nodeId) ? state.selectedNodeIds : [nodeId];
+        const selectedSet = new Set(selectedIds);
+        const hasSelectedAncestor = (candidateId: string): boolean => {
+          let parentId = nodesById.get(candidateId)?.parentId;
+          while (parentId !== null && parentId !== undefined) {
+            if (selectedSet.has(parentId)) return true;
+            parentId = nodesById.get(parentId)?.parentId;
+          }
+          return false;
         };
+        const entries = selectedIds.flatMap((selectedId) => {
+          if (hasSelectedAncestor(selectedId)) return [];
+          const nodeView = nodeViewsRef.current.get(selectedId);
+          const parentView = nodeView?.parent;
+          if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return [];
+          const pointerStart = parentView.toLocal(event.global);
+          return [{
+            nodeId: selectedId,
+            pointerStartX: pointerStart.x,
+            pointerStartY: pointerStart.y,
+            startX: nodeView.position.x,
+            startY: nodeView.position.y,
+            x: nodeView.position.x,
+            y: nodeView.position.y,
+            pivotX: nodeView.pivot.x,
+            pivotY: nodeView.pivot.y,
+          }];
+        });
+        if (entries.length === 0) return;
+        dragRef.current = { entries };
         application.stage.on("pointermove", moveDraggedNode);
         application.stage.on("pointerup", stopDrag);
         application.stage.on("pointerupoutside", stopDrag);
@@ -991,8 +1083,13 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
           if (event.button !== 0) return;
           if (useEditorStore.getState().activeTool === "pan") return;
           event.stopPropagation();
-          useEditorStore.getState().selectNode(nodeId);
-          startDragRef.current?.(nodeId, nodeView, event);
+          const state = useEditorStore.getState();
+          if (event.shiftKey) {
+            state.selectNode(nodeId, true);
+            return;
+          }
+          if (!state.selectedNodeIds.includes(nodeId)) state.selectNode(nodeId);
+          startDragRef.current?.(nodeId, event);
         });
       }
 
@@ -1070,7 +1167,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
 
   useEffect(() => {
     redrawSelectionRef.current();
-  }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId]);
+  }, [activeProfile, activeTool, application, document, sceneId, selectedNodeId, selectedNodeIds]);
 
   const toWorldPosition = (event: React.DragEvent<HTMLDivElement>) => {
     const world = worldRef.current;
@@ -1217,6 +1314,7 @@ export function App() {
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
   const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
+  const selectedNodeIds = useEditorStore((state) => state.selectedNodeIds);
   const spineFrameRequest = useEditorStore((state) => selectedNodeId === null ? undefined : state.spineFrameRequests[selectedNodeId]);
   const spineAutoplay = useEditorStore((state) => selectedNodeId === null ? true : state.spineAutoplay[selectedNodeId] ?? true);
   const addNode = useEditorStore((state) => state.addNode);
@@ -1268,13 +1366,13 @@ export function App() {
       <aside className="panel hierarchy-panel">
         <h1>Hierarchy</h1>
         <WindowsSection document={document} sceneId={sceneId} disabled={editingPrefab !== undefined} />
-        <HierarchyTree owner={owner} selectedNodeId={selectedNodeId} implicitRootNodeId={implicitRootNodeId} />
+        <HierarchyTree owner={owner} selectedNodeIds={selectedNodeIds} implicitRootNodeId={implicitRootNodeId} />
         <div className="hierarchy-assets-action">
           <button type="button" className={`assets-window-trigger${assetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={assetsWindowOpen} onClick={() => setAssetsWindowOpen(!assetsWindowOpen)}>Assets</button>
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} /></aside>
     </main>
   );
