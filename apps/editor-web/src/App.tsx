@@ -9,7 +9,7 @@ import { downloadProjectPackage } from "./exportPackage.js";
 import { AssetsWindow } from "./AssetPanel.js";
 import { NODE_DRAG_TYPE, PREFAB_DRAG_TYPE, PresetsWindow } from "./PresetsPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
-import { EDITOR_SHORTCUTS, isEditorTextInput, TOOL_BY_SHORTCUT, TOOL_SHORTCUTS } from "./keyboardShortcuts.js";
+import { EDITOR_COMMAND_IDS, editorCommandRegistry, isEditorTextInput, type EditorCommandId } from "./editorCommands.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -514,7 +514,7 @@ function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMo
   });
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, deleteDisabled, deleteSelectedNode, setActiveProfile, setActiveTool, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
@@ -526,9 +526,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
   deleteDisabled: boolean;
-  deleteSelectedNode: () => void;
   setActiveProfile: (profile: LayoutProfileId) => void;
-  setActiveTool: (tool: EditorTool) => void;
   addNode: (type: "container" | "image" | "text" | "spine") => void;
   addNodeFromAsset: (assetId: string, position: { x: number; y: number }) => void;
   addPrefabInstance: (prefabId: string, position: { x: number; y: number }) => void;
@@ -1217,7 +1215,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
 
   return (
     <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event) || isPrefabDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={drop}>
-      <ToolPanel activeTool={activeTool} viewMode={viewMode} deleteDisabled={deleteDisabled} deleteSelectedNode={deleteSelectedNode} setActiveTool={setActiveTool} />
+      <ToolPanel activeTool={activeTool} viewMode={viewMode} />
       <div className="canvas-bottom-toolbar" role="toolbar" aria-label="Canvas tools">
         <button
           type="button"
@@ -1233,7 +1231,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
-        <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={`Delete selected node (${EDITOR_SHORTCUTS.deleteNode.label})`} onClick={deleteSelectedNode}>Delete</button>
+        <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={commandTitle(EDITOR_COMMAND_IDS.deleteNode)} onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.deleteNode)}>Delete</button>
       </div>
       {editingPrefabName !== null && <div className="preset-editing-status">
         <span>Editing preset: {editingPrefabName}</span>
@@ -1247,67 +1245,25 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   );
 }
 
-function ToolPanel({ activeTool, viewMode, deleteDisabled, deleteSelectedNode, setActiveTool }: { activeTool: EditorTool; viewMode: ViewMode; deleteDisabled: boolean; deleteSelectedNode: () => void; setActiveTool: (tool: EditorTool) => void }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.altKey || event.metaKey) return;
-      const target = event.target;
-      if (isEditorTextInput(target)) return;
-
-      const state = useEditorStore.getState();
-      const key = event.key.toLowerCase();
-      if (key === EDITOR_SHORTCUTS.deleteNode.key.toLowerCase()) {
-        if (!deleteDisabled) {
-          event.preventDefault();
-          deleteSelectedNode();
-        }
-        return;
-      }
-      if (key === EDITOR_SHORTCUTS.map.key) {
-        state.setViewMode(state.viewMode === "map" ? "single" : "map");
-        return;
-      }
-      if (event.key === "Escape") {
-        // Escape в первую очередь завершает редактирование пресета и только потом выходит из Map.
-        if (state.editingPrefabId !== null) {
-          state.setEditingPrefabId(null);
-          return;
-        }
-        if (state.viewMode === "map") {
-          state.setViewMode("single");
-          return;
-        }
-      }
-
-      const tool = TOOL_BY_SHORTCUT[key];
-      if (tool === undefined) return;
-      if (state.viewMode === "map" && tool !== "pan") return;
-      setActiveTool(tool);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteDisabled, deleteSelectedNode, setActiveTool]);
-
-  const setViewMode = useEditorStore((state) => state.setViewMode);
-  const tools: readonly { tool: EditorTool; label: string; icon: ReactNode; shortcut: string }[] = [
-    { tool: "pan", label: "Pan", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>, shortcut: TOOL_SHORTCUTS.pan.label },
-    { tool: "select", label: "Select", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg>, shortcut: TOOL_SHORTCUTS.select.label },
-    { tool: "resize", label: "Resize", icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4M8 8h8v8H8z" /></svg>, shortcut: TOOL_SHORTCUTS.resize.label },
+function ToolPanel({ activeTool, viewMode }: { activeTool: EditorTool; viewMode: ViewMode }) {
+  const tools: readonly { tool: EditorTool; commandId: EditorCommandId; icon: ReactNode }[] = [
+    { tool: "pan", commandId: EDITOR_COMMAND_IDS.panTool, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg> },
+    { tool: "select", commandId: EDITOR_COMMAND_IDS.selectTool, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 2-2 6L5 3Z" /></svg> },
+    { tool: "resize", commandId: EDITOR_COMMAND_IDS.resizeTool, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4M8 8h8v8H8z" /></svg> },
   ];
 
   return (
     <div className="canvas-tool-mode-group" role="group" aria-label="Viewport tools">
-      {tools.map(({ tool, label, icon, shortcut }) => (
+      {tools.map(({ tool, commandId, icon }) => (
         <button
           key={tool}
           type="button"
           className={`tool-panel-button${activeTool === tool ? " tool-panel-button-active" : ""}`}
-          title={`${label} (${shortcut})`}
-          aria-label={`${label} (${shortcut})`}
+          title={commandTitle(commandId)}
+          aria-label={commandTitle(commandId)}
           aria-pressed={activeTool === tool}
-          disabled={viewMode === "map" && tool !== "pan"}
-          onClick={() => setActiveTool(tool)}
+          disabled={!editorCommandRegistry.isEnabled(commandId)}
+          onClick={() => editorCommandRegistry.execute(commandId)}
         >
           {icon}
         </button>
@@ -1315,15 +1271,21 @@ function ToolPanel({ activeTool, viewMode, deleteDisabled, deleteSelectedNode, s
       <button
         type="button"
         className={`tool-panel-button${viewMode === "map" ? " tool-panel-button-active" : ""}`}
-        title={`Map (${EDITOR_SHORTCUTS.map.label})`}
-        aria-label={`Map (${EDITOR_SHORTCUTS.map.label})`}
+        title={commandTitle(EDITOR_COMMAND_IDS.toggleMap)}
+        aria-label={commandTitle(EDITOR_COMMAND_IDS.toggleMap)}
         aria-pressed={viewMode === "map"}
-        onClick={() => setViewMode(viewMode === "map" ? "single" : "map")}
+        onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.toggleMap)}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7v6H3zM14 5h7v9h-7zM3 14h7v5H3zM14 17h7v2h-7z" /></svg>
       </button>
     </div>
   );
+}
+
+function commandTitle(commandId: EditorCommandId): string {
+  const title = editorCommandRegistry.getTitle(commandId);
+  const shortcut = editorCommandRegistry.getShortcutLabel(commandId);
+  return shortcut === undefined ? title : `${title} (${shortcut})`;
 }
 
 export function App() {
@@ -1333,7 +1295,6 @@ export function App() {
   const activeTool = useEditorStore((state) => state.activeTool);
   const viewMode = useEditorStore((state) => state.viewMode);
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
-  const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
   const selectedNodeIds = useEditorStore((state) => state.selectedNodeIds);
   const spineFrameRequest = useEditorStore((state) => selectedNodeId === null ? undefined : state.spineFrameRequests[selectedNodeId]);
@@ -1341,11 +1302,19 @@ export function App() {
   const addNode = useEditorStore((state) => state.addNode);
   const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
   const addPrefabInstance = useEditorStore((state) => state.addPrefabInstance);
-  const deleteNode = useEditorStore((state) => state.deleteNode);
   const resetToSample = useEditorStore((state) => state.resetToSample);
   const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const setEditingPrefabId = useEditorStore((state) => state.setEditingPrefabId);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditorTextInput(event.target)) return;
+      if (editorCommandRegistry.dispatchKeyboardEvent(event)) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
   const editingPrefab = document.prefabs.find((candidate) => candidate.id === editingPrefabId);
 
@@ -1374,7 +1343,7 @@ export function App() {
     : undefined;
   const selectedNode = selectedSceneNode ?? selectedPrefabNode;
   const selectedNodeIsPresetContent = selectedPrefabNode !== undefined;
-  const deleteDisabled = selectedNode === undefined || selectedNodeIsPresetContent || (selectedNode.parentId === null && owner.rootNodeIds.length === 1);
+  const deleteDisabled = !editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.deleteNode);
   const viewport = scene.layout.referenceViewports[activeProfile];
 
   return (
@@ -1397,7 +1366,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} deleteDisabled={deleteDisabled} deleteSelectedNode={() => { if (selectedNodeId !== null) deleteNode(selectedNodeId); }} setActiveProfile={setActiveProfile} setActiveTool={setActiveTool} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
   );
