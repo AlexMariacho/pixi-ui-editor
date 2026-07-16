@@ -3,12 +3,15 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
 const Id = Type.String({ format: "uuid" });
 const Name = Type.String({ minLength: 1 });
 export const LayoutProfileIdSchema = Type.Union([Type.Literal("desktop"), Type.Literal("mobile")]);
 export type LayoutProfileId = Static<typeof LayoutProfileIdSchema>;
-const Transform = Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }), scaleX: Type.Number(), scaleY: Type.Number(), rotation: Type.Number(), pivotX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), pivotY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })) });
+// width/height допускают любые значения: на растянутой оси (anchorMin < anchorMax) они хранят
+// дельту к якорному прямоугольнику родителя и могут быть нулевыми или отрицательными.
+// Для нерастянутой оси положительность размера проверяет semantic-валидация (NON_POSITIVE_SIZE).
+const Transform = Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number(), height: Type.Number(), scaleX: Type.Number(), scaleY: Type.Number(), rotation: Type.Number(), pivotX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), pivotY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMinX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMinY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMaxX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMaxY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })) });
 const Override = Type.Object({ visible: Type.Optional(Type.Boolean()), transform: Type.Optional(Type.Partial(Transform)) });
 const NodeBase = Type.Object({ id: Id, name: Name, parentId: Type.Union([Id, Type.Null()]), children: Type.Array(Id), visible: Type.Boolean(), transform: Transform, layoutOverrides: Type.Optional(Type.Partial(Type.Object({ desktop: Override, mobile: Override }))), binding: Type.Optional(Type.String()) });
 const Container = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("container") })]);
@@ -42,6 +45,17 @@ export function createStableId(): string { return crypto.randomUUID(); }
 const add = (issues: ValidationIssue[], code: string, path: string, message: string) => issues.push({ code, path, message, severity: "error" });
 
 type Owner = { rootNodeIds: string[]; nodes: UINode[] };
+type TransformData = Static<typeof Transform>;
+/** На нерастянутой оси width/height — абсолютный размер и обязан быть положительным; на растянутой это дельта к якорному прямоугольнику. */
+function checkResolvedSizes(node: UINode, nodePath: string, issues: ValidationIssue[]): void {
+  for (const profile of ["desktop", "mobile"] as const) {
+    const merged: TransformData = { ...node.transform, ...node.layoutOverrides?.[profile]?.transform };
+    const minX = merged.anchorMinX ?? 0, maxX = merged.anchorMaxX ?? minX;
+    const minY = merged.anchorMinY ?? 0, maxY = merged.anchorMaxY ?? minY;
+    if (maxX <= minX && merged.width <= 0) add(issues, "NON_POSITIVE_SIZE", `${nodePath}/transform/width`, `Width must be positive when the '${profile}' X axis is not stretched.`);
+    if (maxY <= minY && merged.height <= 0) add(issues, "NON_POSITIVE_SIZE", `${nodePath}/transform/height`, `Height must be positive when the '${profile}' Y axis is not stretched.`);
+  }
+}
 function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefabs: Set<string>, issues: ValidationIssue[]): void {
   const nodes = new Map<string, UINode>();
   owner.nodes.forEach((node, i) => { if (nodes.has(node.id)) add(issues, "DUPLICATE_ID", `${path}/nodes/${i}/id`, `Duplicate node ID '${node.id}'.`); nodes.set(node.id, node); });
@@ -54,6 +68,7 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     if (node.parentId !== null) { const parent = nodes.get(node.parentId); if (parent && !parent.children.includes(node.id)) add(issues, "HIERARCHY_CHILD_MISMATCH", `${nodePath}/parentId`, `Parent '${node.parentId}' does not list node '${node.id}'.`); }
     if (node.type === "image" || node.type === "spine") { const asset = assets.get(node.assetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/assetId`, `Asset '${node.assetId}' does not exist.`); else if (asset.type !== node.type) add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/assetId`, `A ${node.type} node requires a ${node.type} asset.`); }
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
+    checkResolvedSizes(node, nodePath, issues);
   });
   const visiting = new Set<string>(), visited = new Set<string>(); const visit = (id: string): void => { if (visiting.has(id)) { add(issues, "HIERARCHY_CYCLE", path, `Hierarchy contains a cycle through '${id}'.`); return; } if (visited.has(id)) return; const node = nodes.get(id); if (!node) return; visiting.add(id); node.children.forEach(visit); visiting.delete(id); visited.add(id); }; nodes.forEach((_, id) => visit(id));
 }
@@ -75,7 +90,31 @@ function collectNonFiniteNumbers(input: unknown, path: string, issues: Validatio
 }
 export function validateProjectDocument(input: unknown): ValidationResult { if (!structural(input)) return { valid: false, issues: (structural.errors ?? []).map((error: ErrorObject) => ({ code: "STRUCTURAL_SCHEMA", path: error.instancePath || "/", message: error.message ?? "Invalid document structure.", severity: "error" })) }; const issues: ValidationIssue[] = []; collectNonFiniteNumbers(input, "", issues); issues.push(...semantic(input as ProjectDocument)); return { valid: issues.length === 0, issues }; }
 export function assertProjectDocument(input: unknown): asserts input is ProjectDocument { const result = validateProjectDocument(input); if (!result.valid) throw new TypeError(`Invalid ProjectDocument: ${result.issues.map((x) => `${x.code} at ${x.path}`).join(", ")}`); }
-export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 0 || version !== CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input); assertProjectDocument(migrated); return migrated; }
+/** v1 хранил точечный якорь anchorX/anchorY; v2 заменяет его парой anchorMin/anchorMax с тем же значением. */
+function migrateTransformV1(transform: Record<string, unknown>): void {
+  for (const axis of ["X", "Y"] as const) {
+    const value = transform[`anchor${axis}`];
+    delete transform[`anchor${axis}`];
+    if (typeof value !== "number") continue;
+    transform[`anchorMin${axis}`] = value;
+    transform[`anchorMax${axis}`] = value;
+  }
+}
+function migrateV1ToV2(document: Record<string, unknown>): void {
+  const owners = [...(document.scenes as { nodes: unknown[] }[] ?? []), ...(document.prefabs as { nodes: unknown[] }[] ?? [])];
+  for (const owner of owners) {
+    for (const node of owner.nodes as Record<string, unknown>[]) {
+      if (typeof node.transform === "object" && node.transform !== null) migrateTransformV1(node.transform as Record<string, unknown>);
+      const overrides = node.layoutOverrides as Record<string, { transform?: Record<string, unknown> }> | undefined;
+      for (const profile of ["desktop", "mobile"]) {
+        const transform = overrides?.[profile]?.transform;
+        if (typeof transform === "object" && transform !== null) migrateTransformV1(transform);
+      }
+    }
+  }
+  document.schemaVersion = CURRENT_SCHEMA_VERSION;
+}
+export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version === 1) migrateV1ToV2(migrated); assertProjectDocument(migrated); return migrated; }
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));

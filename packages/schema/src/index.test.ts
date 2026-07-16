@@ -26,12 +26,39 @@ describe("schema v1", () => {
 
   it("accepts normalized anchors and rejects values outside the parent rectangle", () => {
     const document = createProjectDocumentFixture();
-    document.scenes[0]!.nodes[1]!.transform.anchorX = 0.5;
-    document.scenes[0]!.nodes[1]!.transform.anchorY = 1;
+    document.scenes[0]!.nodes[1]!.transform.anchorMinX = 0.5;
+    document.scenes[0]!.nodes[1]!.transform.anchorMinY = 1;
     expect(validateProjectDocument(document).valid).toBe(true);
 
-    document.scenes[0]!.nodes[1]!.transform.anchorX = 1.1;
+    document.scenes[0]!.nodes[1]!.transform.anchorMinX = 1.1;
     expect(validateProjectDocument(document).issues[0]!.code).toBe("STRUCTURAL_SCHEMA");
+  });
+
+  it("allows non-positive width only on a stretched axis", () => {
+    const document = createProjectDocumentFixture();
+    const transform = document.scenes[0]!.nodes[1]!.transform;
+    transform.width = -20;
+    expect(validateProjectDocument(document).issues[0]!.code).toBe("NON_POSITIVE_SIZE");
+
+    transform.anchorMinX = 0;
+    transform.anchorMaxX = 1;
+    expect(validateProjectDocument(document).valid).toBe(true);
+  });
+
+  it("migrates v1 point anchors to v2 anchorMin/anchorMax pairs", () => {
+    const document = createProjectDocumentFixture() as unknown as Record<string, unknown>;
+    document.schemaVersion = 1;
+    const v1Document = document as unknown as ProjectDocument;
+    const transform = v1Document.scenes[0]!.nodes[1]!.transform as Record<string, unknown>;
+    transform.anchorX = 0.5;
+    transform.anchorY = 1;
+    v1Document.scenes[0]!.nodes[1]!.layoutOverrides = { mobile: { transform: { anchorX: 0.25 } as never } };
+
+    const migrated = migrateProjectDocument(document);
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.scenes[0]!.nodes[1]!.transform).toMatchObject({ anchorMinX: 0.5, anchorMaxX: 0.5, anchorMinY: 1, anchorMaxY: 1 });
+    expect(migrated.scenes[0]!.nodes[1]!.transform).not.toHaveProperty("anchorX");
+    expect(migrated.scenes[0]!.nodes[1]!.layoutOverrides?.mobile?.transform).toEqual({ anchorMinX: 0.25, anchorMaxX: 0.25 });
   });
 
   it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => {

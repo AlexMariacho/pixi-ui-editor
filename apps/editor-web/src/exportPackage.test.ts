@@ -8,7 +8,7 @@ const imageAssetId = "20000000-0000-4000-8000-000000000001";
 const spineAssetId = "20000000-0000-4000-8000-000000000002";
 
 const sourceDocument: ProjectDocument = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   project: { id: "20000000-0000-4000-8000-000000000000", name: "Export Fixture" },
   settings: { layoutProfileSelection: { mode: "aspect-ratio", mobileMaxAspectRatio: 1 } },
   assets: [

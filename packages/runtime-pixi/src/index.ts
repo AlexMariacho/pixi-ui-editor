@@ -45,13 +45,24 @@ export function resolveProfileTransform(node: UINode, profile: LayoutProfileId):
   };
 }
 
-/** Resolves normalized anchors against the node's parent rectangle. Missing anchors preserve legacy top-left positioning. */
+/**
+ * Resolves normalized Unity-style anchors against the node's parent rectangle.
+ * A point axis (anchorMin == anchorMax) offsets the stored x/y by the anchor point; missing anchors
+ * preserve legacy top-left positioning. A stretched axis (anchorMin < anchorMax) additionally treats
+ * the stored width/height as a delta to the anchor rectangle, so the node follows the parent's size.
+ */
 export function resolveAnchoredTransform(transform: UINode["transform"], parentSize?: LayoutSize): UINode["transform"] {
   if (parentSize === undefined) return transform;
+  const minX = transform.anchorMinX ?? 0;
+  const maxX = transform.anchorMaxX ?? minX;
+  const minY = transform.anchorMinY ?? 0;
+  const maxY = transform.anchorMaxY ?? minY;
   return {
     ...transform,
-    x: transform.x + (transform.anchorX ?? 0) * parentSize.width,
-    y: transform.y + (transform.anchorY ?? 0) * parentSize.height,
+    x: transform.x + minX * parentSize.width,
+    y: transform.y + minY * parentSize.height,
+    width: Math.max(0, transform.width + (maxX - minX) * parentSize.width),
+    height: Math.max(0, transform.height + (maxY - minY) * parentSize.height),
   };
 }
 
@@ -72,62 +83,117 @@ export function fitSpineToTransform(
     : undefined;
 }
 
-const nodeContentViews = new WeakMap<Container, Container>();
+/**
+ * Base display object for every schema node type. The whole layout contract — profile overrides,
+ * anchors, pivot, position, scale, visibility — lives here once; subclasses only synchronize their
+ * type-specific content against the resolved layout rectangle.
+ */
+export abstract class NodeView extends Container {
+  protected content?: Container;
 
-/** Every schema node owns the same outer layout container; asset-specific sizing stays inside it. */
-function createNodeView(node: UINode, transform: UINode["transform"], textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): Container {
-  const view = new Container();
-  let content: Container | undefined;
+  protected setContent(content: Container): void {
+    this.content = content;
+    this.addChild(content);
+  }
 
+  /** Syncs type-specific content to the resolved layout rectangle; layout math itself is shared. */
+  protected abstract syncContent(node: UINode, transform: UINode["transform"]): void;
+
+  update(node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize): void {
+    const resolved = resolveProfileTransform(node, profile);
+    const transform = resolveAnchoredTransform(resolved.transform, parentSize);
+    this.syncContent(node, transform);
+
+    const pivotX = (transform.pivotX ?? 0) * transform.width;
+    const pivotY = (transform.pivotY ?? 0) * transform.height;
+    this.pivot.set(pivotX, pivotY);
+    this.position.set(transform.x + pivotX, transform.y + pivotY);
+    this.rotation = transform.rotation;
+    this.scale.set(transform.scaleX, transform.scaleY);
+    this.visible = resolved.visible;
+  }
+
+  getSpine(): Spine | undefined {
+    return this.content instanceof Spine ? this.content : undefined;
+  }
+}
+
+class ContainerNodeView extends NodeView {
+  protected syncContent(): void {}
+}
+
+class ImageNodeView extends NodeView {
+  constructor(texture: Texture | undefined) {
+    super();
+    this.setContent(texture !== undefined ? new Sprite(texture) : new Graphics());
+  }
+
+  protected syncContent(_node: UINode, transform: UINode["transform"]): void {
+    if (this.content instanceof Sprite) this.content.setSize(transform.width, transform.height);
+    else if (this.content instanceof Graphics) this.content.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
+  }
+}
+
+class TextNodeView extends NodeView {
+  constructor(text: string) {
+    super();
+    this.setContent(new Text({ text, style: { fontFamily: "Arial", fontSize: 24, fill: 0xffffff } }));
+  }
+
+  protected syncContent(node: UINode): void {
+    if (node.type === "text" && this.content instanceof Text && this.content.text !== node.text) this.content.text = node.text;
+  }
+}
+
+class SpineNodeView extends NodeView {
+  constructor(skeletonData: SkeletonData | undefined, animation: string | undefined, loop: boolean) {
+    super();
+    if (skeletonData === undefined) {
+      this.setContent(new Graphics());
+      return;
+    }
+    const spine = new Spine(skeletonData);
+    if (animation !== undefined && skeletonData.findAnimation(animation) !== null) spine.state.setAnimation(0, animation, loop);
+    this.setContent(spine);
+  }
+
+  protected syncContent(_node: UINode, transform: UINode["transform"]): void {
+    if (this.content instanceof Spine) {
+      const fit = fitSpineToTransform(this.content.skeleton.data, transform);
+      if (fit !== undefined) {
+        this.content.scale.set(fit.scaleX, fit.scaleY);
+        this.content.position.set(fit.x, fit.y);
+      }
+    } else if (this.content instanceof Graphics) {
+      this.content.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+    }
+  }
+}
+
+class PrefabInstanceNodeView extends NodeView {
+  constructor(expanded: Container | undefined) {
+    super();
+    this.setContent(expanded ?? new Graphics());
+  }
+
+  protected syncContent(_node: UINode, transform: UINode["transform"]): void {
+    if (this.content instanceof Graphics) this.content.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+  }
+}
+
+function createNodeView(node: UINode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): NodeView {
   switch (node.type) {
     case "container":
-      break;
-    case "image": {
-      const texture = textures?.get(node.assetId);
-      if (texture !== undefined) {
-        const sprite = new Sprite(texture);
-        sprite.setSize(transform.width, transform.height);
-        content = sprite;
-      } else {
-        content = new Graphics()
-          .rect(0, 0, transform.width, transform.height)
-          .fill(0x4a5568)
-          .stroke({ width: 1, color: 0x94a3b8 });
-      }
-      break;
-    }
+      return new ContainerNodeView();
+    case "image":
+      return new ImageNodeView(textures?.get(node.assetId));
     case "text":
-      content = new Text({
-        text: node.text,
-        style: { fontFamily: "Arial", fontSize: 24, fill: 0xffffff },
-      });
-      break;
-    case "spine": {
-      const skeletonData = spines?.get(node.assetId);
-      if (skeletonData !== undefined) {
-        const spine = new Spine(skeletonData);
-        if (node.animation !== undefined && skeletonData.findAnimation(node.animation) !== null) spine.state.setAnimation(0, node.animation, node.loop ?? true);
-        const fit = fitSpineToTransform(skeletonData, transform);
-        if (fit !== undefined) {
-          spine.scale.set(fit.scaleX, fit.scaleY);
-          spine.position.set(fit.x, fit.y);
-        }
-        content = spine;
-      } else {
-        content = new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
-      }
-      break;
-    }
+      return new TextNodeView(node.text);
+    case "spine":
+      return new SpineNodeView(spines?.get(node.assetId), node.animation, node.loop ?? true);
     case "prefab-instance":
-      content = expandPrefab?.(node.prefabId) ?? new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
-      break;
+      return new PrefabInstanceNodeView(expandPrefab?.(node.prefabId));
   }
-
-  if (content !== undefined) {
-    nodeContentViews.set(view, content);
-    view.addChild(content);
-  }
-  return view;
 }
 
 /** Builds a PixiJS display tree for a scene without depending on DOM or editor state. */
@@ -159,12 +225,12 @@ export function buildSceneView(
 
       const resolved = resolveProfileTransform(node, profile);
       const transform = resolveAnchoredTransform(resolved.transform, parentSize);
-      const view = createNodeView(node, transform, textures, spines, (prefabId) => {
+      const view = createNodeView(node, textures, spines, (prefabId) => {
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
       });
-      updateNodeView(view, node, profile, parentSize);
+      view.update(node, profile, parentSize);
       if (registerViews) nodeViews.set(node.id, view);
 
       const childSize = owner === scene && node.parentId === null
@@ -193,37 +259,7 @@ export function buildSceneView(
  * so editors can update views in place without rebuilding the scene tree.
  */
 export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize): void {
-  const resolved = resolveProfileTransform(node, profile);
-  const transform = resolveAnchoredTransform(resolved.transform, parentSize);
-  const { visible } = resolved;
-  const content = nodeContentViews.get(view);
-
-  if (node.type === "image" && content instanceof Sprite) {
-    content.setSize(transform.width, transform.height);
-  } else if (node.type === "image" && content instanceof Graphics) {
-    content.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
-  } else if (node.type === "text" && content instanceof Text) {
-    if (content.text !== node.text) content.text = node.text;
-  } else if (node.type === "spine" || node.type === "prefab-instance") {
-    const spine = node.type === "spine" ? findSpineChild(view) : undefined;
-    if (spine !== undefined) {
-      const fit = fitSpineToTransform(spine.skeleton.data, transform);
-      if (fit !== undefined) {
-        spine.scale.set(fit.scaleX, fit.scaleY);
-        spine.position.set(fit.x, fit.y);
-      }
-    } else if (content instanceof Graphics) {
-      content.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
-    }
-  }
-
-  const pivotX = (transform.pivotX ?? 0) * transform.width;
-  const pivotY = (transform.pivotY ?? 0) * transform.height;
-  view.pivot.set(pivotX, pivotY);
-  view.position.set(transform.x + pivotX, transform.y + pivotY);
-  view.rotation = transform.rotation;
-  view.scale.set(transform.scaleX, transform.scaleY);
-  view.visible = visible;
+  if (view instanceof NodeView) view.update(node, profile, parentSize);
 }
 
 /** Lists the nodes a scene renders, including nodes of prefab definitions its prefab instances expand to. */
@@ -262,8 +298,7 @@ export function createSpineView(skeletonData: SkeletonData, animation?: string, 
 }
 
 function findSpineChild(view: Container): Spine | undefined {
-  const content = nodeContentViews.get(view);
-  if (content instanceof Spine) return content;
+  if (view instanceof NodeView) return view.getSpine();
   return view instanceof Spine ? view : view.children.find((child): child is Spine => child instanceof Spine);
 }
 

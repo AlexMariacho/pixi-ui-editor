@@ -1,4 +1,4 @@
-import { loadProjectDocument, parseProjectDocumentJson, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
+import { loadProjectDocument, parseProjectDocumentJson, resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
 import {
   createStableId,
   serializeProjectDocument,
@@ -44,7 +44,7 @@ export type EditorState = {
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   updateNodeProfileTransforms(updates: { nodeId: string; patch: Partial<UINode["transform"]> }[]): void;
-  setNodeProfileAnchor(nodeId: string, anchorX: number, anchorY: number, options: { setPivot: boolean; snap: boolean }): void;
+  setNodeProfileAnchor(nodeId: string, anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
@@ -128,44 +128,65 @@ function getParentLayoutSize(target: EditingTarget, node: UINode, profile: Layou
     const parent = target.nodes.find((candidate) => candidate.id === node.parentId);
     if (parent !== undefined) {
       if ("layout" in target && parent.parentId === null) return target.layout.referenceViewports[profile];
-      const transform = resolveProfileTransform(parent, profile).transform;
+      // Родитель может быть сам растянут якорями, поэтому его размер разрешается рекурсивно.
+      const transform = resolveAnchoredTransform(resolveProfileTransform(parent, profile).transform, getParentLayoutSize(target, parent, profile));
       return { width: transform.width, height: transform.height };
     }
   }
   return "layout" in target ? target.layout.referenceViewports[profile] : { width: 0, height: 0 };
 }
 
-/** Changes the anchor without jumping; Shift can also move the pivot, while Shift+Ctrl snaps it in scene space. */
+export type AnchorRect = { minX: number; minY: number; maxX: number; maxY: number };
+
+/**
+ * Changes the Unity-style anchors without jumping: on a stretched axis (min < max) the stored size
+ * becomes a delta to the anchor rectangle. Shift can also move the pivot (edge pivot for point axes,
+ * 0.5 for stretched ones), while Shift+Ctrl snaps: point axes put the pivot on the anchor point,
+ * stretched axes zero their offsets so the node matches the anchor rectangle.
+ */
 export function createAnchorPatch(
   transform: UINode["transform"],
   parentSize: LayoutSize,
-  anchorX: number,
-  anchorY: number,
+  anchor: AnchorRect,
   options: { setPivot: boolean; snap: boolean },
   snapPointInParent?: { x: number; y: number },
 ): Partial<UINode["transform"]> {
-  const patch: Partial<UINode["transform"]> = { anchorX, anchorY };
-  const nextPivotX = options.setPivot ? anchorX : (transform.pivotX ?? 0);
-  const nextPivotY = options.setPivot ? anchorY : (transform.pivotY ?? 0);
+  const oldMinX = transform.anchorMinX ?? 0;
+  const oldMinY = transform.anchorMinY ?? 0;
+  const oldSpanX = (transform.anchorMaxX ?? oldMinX) - oldMinX;
+  const oldSpanY = (transform.anchorMaxY ?? oldMinY) - oldMinY;
+  const spanX = anchor.maxX - anchor.minX;
+  const spanY = anchor.maxY - anchor.minY;
+  const renderedWidth = transform.width + oldSpanX * parentSize.width;
+  const renderedHeight = transform.height + oldSpanY * parentSize.height;
 
+  const patch: Partial<UINode["transform"]> = { anchorMinX: anchor.minX, anchorMinY: anchor.minY, anchorMaxX: anchor.maxX, anchorMaxY: anchor.maxY };
+  if (spanX !== oldSpanX) patch.width = renderedWidth - spanX * parentSize.width;
+  if (spanY !== oldSpanY) patch.height = renderedHeight - spanY * parentSize.height;
+
+  const nextPivotX = options.setPivot ? (spanX > 0 ? 0.5 : anchor.minX) : (transform.pivotX ?? 0);
+  const nextPivotY = options.setPivot ? (spanY > 0 ? 0.5 : anchor.minY) : (transform.pivotY ?? 0);
   if (options.setPivot) {
     patch.pivotX = nextPivotX;
     patch.pivotY = nextPivotY;
   }
   if (options.snap) {
-    const snapPoint = snapPointInParent ?? { x: anchorX * parentSize.width, y: anchorY * parentSize.height };
-    patch.x = snapPoint.x - anchorX * parentSize.width - nextPivotX * transform.width;
-    patch.y = snapPoint.y - anchorY * parentSize.height - nextPivotY * transform.height;
+    const snapPoint = snapPointInParent ?? { x: anchor.minX * parentSize.width, y: anchor.minY * parentSize.height };
+    if (spanX > 0) patch.width = 0;
+    if (spanY > 0) patch.height = 0;
+    patch.x = spanX > 0 ? 0 : snapPoint.x - anchor.minX * parentSize.width - nextPivotX * renderedWidth;
+    patch.y = spanY > 0 ? 0 : snapPoint.y - anchor.minY * parentSize.height - nextPivotY * renderedHeight;
     return patch;
   }
 
-  let x = transform.x + ((transform.anchorX ?? 0) - anchorX) * parentSize.width;
-  let y = transform.y + ((transform.anchorY ?? 0) - anchorY) * parentSize.height;
+  let x = transform.x + (oldMinX - anchor.minX) * parentSize.width;
+  let y = transform.y + (oldMinY - anchor.minY) * parentSize.height;
   if (options.setPivot) {
-    const oldPivotX = (transform.pivotX ?? 0) * transform.width;
-    const oldPivotY = (transform.pivotY ?? 0) * transform.height;
-    const newPivotX = nextPivotX * transform.width;
-    const newPivotY = nextPivotY * transform.height;
+    // Без snap видимый прямоугольник сохраняется, поэтому pivot-компенсация считается по rendered-размеру.
+    const oldPivotX = (transform.pivotX ?? 0) * renderedWidth;
+    const oldPivotY = (transform.pivotY ?? 0) * renderedHeight;
+    const newPivotX = nextPivotX * renderedWidth;
+    const newPivotY = nextPivotY * renderedHeight;
     const cosine = Math.cos(transform.rotation);
     const sine = Math.sin(transform.rotation);
     const a = cosine * transform.scaleX;
@@ -403,7 +424,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
     return commitCandidate(state, candidate, "Node transform updates were rejected because they make the project document invalid.");
   }),
-  setNodeProfileAnchor: (nodeId, anchorX, anchorY, options) => set((state) => {
+  setNodeProfileAnchor: (nodeId, anchor, options) => set((state) => {
     const candidate = structuredClone(state.document);
     const target = getEditingTarget(candidate, state);
     const node = target?.nodes.find((candidateNode) => candidateNode.id === nodeId);
@@ -419,11 +440,11 @@ export const useEditorStore = create<EditorState>((set) => ({
       const viewport = target.layout.referenceViewports[state.activeProfile];
       const parentWorldMatrix = node.parentId === null ? undefined : getNodeWorldMatrix(target, node.parentId, state.activeProfile);
       snapPointInParent = worldPointToLocal(parentWorldMatrix, {
-        x: anchorX * viewport.width,
-        y: anchorY * viewport.height,
+        x: anchor.minX * viewport.width,
+        y: anchor.minY * viewport.height,
       });
     }
-    const patch = createAnchorPatch(transform, parentSize, anchorX, anchorY, options, snapPointInParent);
+    const patch = createAnchorPatch(transform, parentSize, anchor, options, snapPointInParent);
     if (state.activeProfile === "desktop") {
       const previousMobile = resolveProfileTransform(node, "mobile").transform;
       const previousMobileOverride = node.layoutOverrides?.mobile?.transform;
@@ -435,7 +456,11 @@ export const useEditorStore = create<EditorState>((set) => ({
         node.layoutOverrides.mobile ??= {};
         const mobilePatch: Partial<UINode["transform"]> = {};
         for (const key of inheritedKeys) {
-          const value = previousMobile[key] ?? ((key === "anchorX" || key === "anchorY" || key === "pivotX" || key === "pivotY") ? 0 : undefined);
+          const value = previousMobile[key]
+            ?? (key === "anchorMaxX" ? previousMobile.anchorMinX ?? 0
+              : key === "anchorMaxY" ? previousMobile.anchorMinY ?? 0
+              : (key === "anchorMinX" || key === "anchorMinY" || key === "pivotX" || key === "pivotY") ? 0
+              : undefined);
           if (value !== undefined) mobilePatch[key] = value;
         }
         node.layoutOverrides.mobile.transform = { ...node.layoutOverrides.mobile.transform, ...mobilePatch };
@@ -698,18 +723,26 @@ export const useEditorStore = create<EditorState>((set) => ({
         const worldMatrix = getNodeWorldMatrix(target, node.id, profile);
         const parentWorldMatrix = placement.parentId === null ? undefined : getNodeWorldMatrix(target, placement.parentId, profile);
         const resolvedTransform = resolveProfileTransform(node, profile).transform;
+        // Матрицы работают с rendered-прямоугольником, поэтому якоря применяются до и вычитаются после.
+        const renderedTransform = resolveAnchoredTransform(resolvedTransform, getParentLayoutSize(target, node, profile));
         const preserved = worldMatrix === undefined
           ? undefined
-          : transformRelativeToParent(worldMatrix, parentWorldMatrix, resolvedTransform);
+          : transformRelativeToParent(worldMatrix, parentWorldMatrix, renderedTransform);
         if (preserved === undefined) {
           console.warn(`Cannot move node '${nodeId}': preserving its visual transform would require skew or an invertible destination parent.`);
           return state;
         }
         const destinationParentSize = getParentLayoutSize(target, { ...node, parentId: placement.parentId }, profile);
+        const anchorMinX = resolvedTransform.anchorMinX ?? 0;
+        const anchorMinY = resolvedTransform.anchorMinY ?? 0;
+        const spanX = (resolvedTransform.anchorMaxX ?? anchorMinX) - anchorMinX;
+        const spanY = (resolvedTransform.anchorMaxY ?? anchorMinY) - anchorMinY;
         preservedTransforms.set(profile, {
           ...preserved,
-          x: preserved.x - (preserved.anchorX ?? 0) * destinationParentSize.width,
-          y: preserved.y - (preserved.anchorY ?? 0) * destinationParentSize.height,
+          x: preserved.x - anchorMinX * destinationParentSize.width,
+          y: preserved.y - anchorMinY * destinationParentSize.height,
+          width: preserved.width - spanX * destinationParentSize.width,
+          height: preserved.height - spanY * destinationParentSize.height,
         });
       }
     }
@@ -723,6 +756,9 @@ export const useEditorStore = create<EditorState>((set) => ({
       node.transform = desktop;
       node.layoutOverrides ??= {};
       node.layoutOverrides.mobile ??= {};
+      // На растянутой оси width/height — это дельта к якорному прямоугольнику нового родителя, поэтому она profile-специфична.
+      const mobileMinX = mobile.anchorMinX ?? 0;
+      const mobileMinY = mobile.anchorMinY ?? 0;
       node.layoutOverrides.mobile.transform = {
         ...node.layoutOverrides.mobile.transform,
         x: mobile.x,
@@ -730,6 +766,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         scaleX: mobile.scaleX,
         scaleY: mobile.scaleY,
         rotation: mobile.rotation,
+        ...((mobile.anchorMaxX ?? mobileMinX) > mobileMinX ? { width: mobile.width } : {}),
+        ...((mobile.anchorMaxY ?? mobileMinY) > mobileMinY ? { height: mobile.height } : {}),
       };
     }
 

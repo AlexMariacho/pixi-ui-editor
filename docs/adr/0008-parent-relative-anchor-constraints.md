@@ -1,6 +1,6 @@
 # ADR 0008: Parent-relative anchor constraints
 
-- Status: Accepted
+- Status: Superseded by [ADR 0009](0009-unity-style-stretch-anchors.md) (schema v2 replaces the point anchor with anchorMin/anchorMax pairs)
 - Date: 2026-07-16
 
 ## Decision

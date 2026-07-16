@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UINode } from "@pixi-ui-editor/schema";
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { getEditingTarget, useEditorStore } from "./store.js";
+import { getEditingTarget, useEditorStore, type AnchorRect } from "./store.js";
 import { loadEditorSceneSpines } from "./assets.js";
 import { getNodeWorldMatrix } from "./transformCoordinates.js";
 
@@ -104,18 +104,29 @@ function RotationField({ radians, onChangeRadians }: { radians: number; onChange
   return <InspectorField label="Rotation"><input type="number" value={text} step={1} onChange={applyDegrees} /></InspectorField>;
 }
 
-const ANCHOR_PRESETS: { x: number; y: number }[] = [
+const PIVOT_PRESETS: { x: number; y: number }[] = [
   { x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 1, y: 0 },
   { x: 0, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 1, y: 0.5 },
   { x: 0, y: 1 }, { x: 0.5, y: 1 }, { x: 1, y: 1 },
 ];
+
+// Unity-стиль: по каждой оси якорь — это min/max пара; четвёртый вариант (0..1) растягивает объект вдоль оси.
+const ANCHOR_AXIS_PRESETS: { min: number; max: number }[] = [
+  { min: 0, max: 0 }, { min: 0.5, max: 0.5 }, { min: 1, max: 1 }, { min: 0, max: 1 },
+];
+const ANCHOR_PRESETS: AnchorRect[] = ANCHOR_AXIS_PRESETS.flatMap((yAxis) =>
+  ANCHOR_AXIS_PRESETS.map((xAxis) => ({ minX: xAxis.min, maxX: xAxis.max, minY: yAxis.min, maxY: yAxis.max })));
+
+const isStretched = (min: number, max: number) => max - min > 0.0001;
+const sameAnchor = (left: AnchorRect, right: AnchorRect) =>
+  samePivot(left.minX, right.minX) && samePivot(left.maxX, right.maxX) && samePivot(left.minY, right.minY) && samePivot(left.maxY, right.maxY);
 
 const samePivot = (a: number, b: number) => Math.abs(a - b) < 0.001;
 
 /** 3x3 grid for the common pivot positions used to rotate/scale around a point other than the top-left corner. */
 function PivotGrid({ pivotX, pivotY, onSelect }: { pivotX: number; pivotY: number; onSelect: (x: number, y: number) => void }) {
   return <div className="anchor-grid" role="group" aria-label="Pivot anchor">
-    {ANCHOR_PRESETS.map((preset) => {
+    {PIVOT_PRESETS.map((preset) => {
       const active = samePivot(preset.x, pivotX) && samePivot(preset.y, pivotY);
       return <button
         key={`${preset.x}-${preset.y}`}
@@ -143,30 +154,36 @@ function PivotField({ pivotX, pivotY, onChange }: { pivotX: number; pivotY: numb
   </>;
 }
 
-function AnchorPresetIcon({ x, y, edgeMode }: { x: number; y: number; edgeMode: boolean }) {
-  const horizontal = x === 0 ? "left" : x === 1 ? "right" : "center";
-  const vertical = y === 0 ? "top" : y === 1 ? "bottom" : "center";
-  const markerKind = !edgeMode
-    ? "point"
-    : horizontal === "center" && vertical === "center"
-      ? "center"
-      : horizontal === "center"
-        ? `side-${vertical}`
-        : vertical === "center"
-          ? `side-${horizontal}`
-          : `corner-${vertical}-${horizontal}`;
-  return <span className={edgeMode ? "anchor-preset-icon anchor-preset-icon-edge" : "anchor-preset-icon"}>
-    <span className="anchor-preset-guide anchor-preset-guide-x" style={{ left: `${x * 100}%` }} />
-    <span className="anchor-preset-guide anchor-preset-guide-y" style={{ top: `${y * 100}%` }} />
-    <span className={`anchor-preset-marker anchor-preset-marker-${markerKind}`} style={{ left: `${x * 100}%`, top: `${y * 100}%` }} />
+function AnchorPresetIcon({ anchor, pivotPreview = false }: { anchor: AnchorRect; pivotPreview?: boolean }) {
+  const stretchX = isStretched(anchor.minX, anchor.maxX);
+  const stretchY = isStretched(anchor.minY, anchor.maxY);
+  return <span className="anchor-preset-icon">
+    <span className="anchor-preset-guide anchor-preset-guide-x" style={{ left: `${anchor.minX * 100}%` }} />
+    {stretchX && <span className="anchor-preset-guide anchor-preset-guide-x" style={{ left: `${anchor.maxX * 100}%` }} />}
+    <span className="anchor-preset-guide anchor-preset-guide-y" style={{ top: `${anchor.minY * 100}%` }} />
+    {stretchY && <span className="anchor-preset-guide anchor-preset-guide-y" style={{ top: `${anchor.maxY * 100}%` }} />}
+    {!stretchX && !stretchY
+      ? <span className="anchor-preset-marker-point" style={{ left: `${anchor.minX * 100}%`, top: `${anchor.minY * 100}%` }} />
+      : <span className="anchor-preset-marker-stretch" style={{
+          left: stretchX ? "3px" : `calc(${anchor.minX * 100}% - 1.5px)`,
+          right: stretchX ? "3px" : undefined,
+          width: stretchX ? undefined : "3px",
+          top: stretchY ? "3px" : `calc(${anchor.minY * 100}% - 1.5px)`,
+          bottom: stretchY ? "3px" : undefined,
+          height: stretchY ? undefined : "3px",
+        }} />}
+    {/* Shift-превью: точка показывает pivot, который получит нода (0.5 на растянутой оси). */}
+    {pivotPreview && <span className="anchor-preset-pivot-preview" style={{
+      left: `${(stretchX ? 0.5 : anchor.minX) * 100}%`,
+      top: `${(stretchY ? 0.5 : anchor.minY) * 100}%`,
+    }} />}
   </span>;
 }
 
-/** Unity-like anchor preset popup. Shift couples the object's pivot; Ctrl+Shift also snaps it to the chosen parent point. */
-function AnchorField({ anchorX, anchorY, onSelect }: {
-  anchorX: number;
-  anchorY: number;
-  onSelect: (x: number, y: number, options: { setPivot: boolean; snap: boolean }) => void;
+/** Unity-like 4x4 anchor preset popup: the last row/column stretches the node along that axis. Shift couples the object's pivot; Ctrl+Shift also snaps it to the chosen parent point or anchor rectangle. */
+function AnchorField({ anchor, onSelect }: {
+  anchor: AnchorRect;
+  onSelect: (anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }) => void;
 }) {
   const [modifiers, setModifiers] = useState({ shift: false, ctrl: false });
   const [open, setOpen] = useState(false);
@@ -192,7 +209,7 @@ function AnchorField({ anchorX, anchorY, onSelect }: {
     const placePopover = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (rect === undefined) return;
-      const width = 170;
+      const width = 206;
       const height = popoverRef.current?.offsetHeight ?? 190;
       const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
       const top = rect.top >= height + 8
@@ -218,15 +235,16 @@ function AnchorField({ anchorX, anchorY, onSelect }: {
   const popover = open ? <div ref={popoverRef} className="anchor-presets-popover" style={popoverPosition}>
       <div className="anchor-presets-grid" role="group" aria-label="Anchor presets">
         {ANCHOR_PRESETS.map((preset) => {
-          const active = samePivot(preset.x, anchorX) && samePivot(preset.y, anchorY);
+          const active = sameAnchor(preset, anchor);
+          const label = (min: number, max: number) => (isStretched(min, max) ? "stretch" : `${min * 100}%`);
           return <button
-            key={`${preset.x}-${preset.y}`}
+            key={`${preset.minX}-${preset.maxX}-${preset.minY}-${preset.maxY}`}
             type="button"
             className={active ? "anchor-preset anchor-preset-active" : "anchor-preset"}
-            aria-label={`Anchor ${preset.x * 100}% x ${preset.y * 100}%`}
+            aria-label={`Anchor ${label(preset.minX, preset.maxX)} x ${label(preset.minY, preset.maxY)}`}
             aria-pressed={active}
-            onClick={(event) => onSelect(preset.x, preset.y, { setPivot: event.shiftKey, snap: event.shiftKey && event.ctrlKey })}
-          ><AnchorPresetIcon x={preset.x} y={preset.y} edgeMode={modifiers.shift} /></button>;
+            onClick={(event) => onSelect(preset, { setPivot: event.shiftKey, snap: event.shiftKey && event.ctrlKey })}
+          ><AnchorPresetIcon anchor={preset} pivotPreview={modifiers.shift} /></button>;
         })}
       </div>
       <p className={modifiers.shift && modifiers.ctrl ? "anchor-presets-hint anchor-presets-hint-active" : "anchor-presets-hint"}>
@@ -236,7 +254,7 @@ function AnchorField({ anchorX, anchorY, onSelect }: {
 
   return <InspectorField label="Anchors"><span className="anchor-presets">
     <button ref={triggerRef} type="button" className={open ? "anchor-presets-trigger anchor-presets-trigger-open" : "anchor-presets-trigger"} aria-label="Open anchor presets" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      <AnchorPresetIcon x={anchorX} y={anchorY} edgeMode={modifiers.shift} />
+      <AnchorPresetIcon anchor={anchor} />
     </button>
     {popover !== null && createPortal(popover, document.body)}
   </span></InspectorField>;
@@ -287,8 +305,16 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
 
   const pivotX = resolvedTransform.pivotX ?? 0;
   const pivotY = resolvedTransform.pivotY ?? 0;
-  const anchorX = resolvedTransform.anchorX ?? 0;
-  const anchorY = resolvedTransform.anchorY ?? 0;
+  const anchorMinX = resolvedTransform.anchorMinX ?? 0;
+  const anchorMinY = resolvedTransform.anchorMinY ?? 0;
+  const anchor: AnchorRect = {
+    minX: anchorMinX,
+    minY: anchorMinY,
+    maxX: resolvedTransform.anchorMaxX ?? anchorMinX,
+    maxY: resolvedTransform.anchorMaxY ?? anchorMinY,
+  };
+  const stretchX = isStretched(anchor.minX, anchor.maxX);
+  const stretchY = isStretched(anchor.minY, anchor.maxY);
 
   return <fieldset className="inspector-content" disabled={readOnly}>
     {readOnly && <p className="inspector-empty">Preset content is read-only. Use Edit in Presets to change it.</p>}
@@ -333,16 +359,27 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
       <InspectorField label="Vertical"><input type="checkbox" checked={selectedNode.layoutOverrides?.mobile?.visible !== false} onChange={(event) => setNodeOrientationVisibility(selectedNode.id, "mobile", event.target.checked)} /></InspectorField>
     </InspectorWindow>
     <InspectorWindow title="Transform">
-      <NumberField label="Local X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />
-      <NumberField label="Local Y" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value })} />
+      {/* Как в Unity: растянутая ось редактируется отступами от якорных точек (Left/Right, Top/Bottom) вместо позиции и размера. */}
+      {stretchX
+        ? <>
+          <NumberField label="Left" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value, width: resolvedTransform.x + resolvedTransform.width - value })} />
+          <NumberField label="Right" value={-(resolvedTransform.x + resolvedTransform.width)} step={1} onChange={(value) => updateTransform({ width: -value - resolvedTransform.x })} />
+        </>
+        : <NumberField label="Local X" value={resolvedTransform.x} step={1} onChange={(value) => updateTransform({ x: value })} />}
+      {stretchY
+        ? <>
+          <NumberField label="Top" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value, height: resolvedTransform.y + resolvedTransform.height - value })} />
+          <NumberField label="Bottom" value={-(resolvedTransform.y + resolvedTransform.height)} step={1} onChange={(value) => updateTransform({ height: -value - resolvedTransform.y })} />
+        </>
+        : <NumberField label="Local Y" value={resolvedTransform.y} step={1} onChange={(value) => updateTransform({ y: value })} />}
       <InspectorField label="Global X"><output>{worldTransform === undefined ? "—" : formatDegrees(worldTransform.tx)}</output></InspectorField>
       <InspectorField label="Global Y"><output>{worldTransform === undefined ? "—" : formatDegrees(worldTransform.ty)}</output></InspectorField>
-      <NumberField label="Width" value={resolvedTransform.width} step={1} onChange={(value) => updateTransform({ width: value })} />
-      <NumberField label="Height" value={resolvedTransform.height} step={1} onChange={(value) => updateTransform({ height: value })} />
+      {!stretchX && <NumberField label="Width" value={resolvedTransform.width} step={1} onChange={(value) => updateTransform({ width: value })} />}
+      {!stretchY && <NumberField label="Height" value={resolvedTransform.height} step={1} onChange={(value) => updateTransform({ height: value })} />}
       <NumberField label="Scale X" value={resolvedTransform.scaleX} step={0.1} onChange={(value) => updateTransform({ scaleX: value })} />
       <NumberField label="Scale Y" value={resolvedTransform.scaleY} step={0.1} onChange={(value) => updateTransform({ scaleY: value })} />
       <RotationField radians={resolvedTransform.rotation} onChangeRadians={(value) => updateTransform({ rotation: value })} />
-      <AnchorField anchorX={anchorX} anchorY={anchorY} onSelect={(x, y, options) => setNodeProfileAnchor(selectedNode.id, x, y, options)} />
+      <AnchorField anchor={anchor} onSelect={(nextAnchor, options) => setNodeProfileAnchor(selectedNode.id, nextAnchor, options)} />
       <PivotField pivotX={pivotX} pivotY={pivotY} onChange={(x, y) => updateTransform({ pivotX: x, pivotY: y })} />
     </InspectorWindow>
     {selectedNode.type === "text" && <InspectorWindow title="Text">

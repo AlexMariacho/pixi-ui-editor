@@ -91,30 +91,41 @@ describe("setNodeProfileAnchor", () => {
     const mobileBefore = structuredClone(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.layoutOverrides?.mobile?.transform);
     const parentWidth = useEditorStore.getState().document.scenes[0]!.layout.referenceViewports.desktop.width;
 
-    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 0.5, 0, { setPivot: false, snap: false });
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, { minX: 0.5, maxX: 0.5, minY: 0, maxY: 0 }, { setPivot: false, snap: false });
     let transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
-    expect(transform).toMatchObject({ anchorX: 0.5, anchorY: 0, x: before.x - parentWidth * 0.5, y: before.y });
+    expect(transform).toMatchObject({ anchorMinX: 0.5, anchorMaxX: 0.5, anchorMinY: 0, anchorMaxY: 0, x: before.x - parentWidth * 0.5, y: before.y });
 
-    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 1, 1, { setPivot: true, snap: true });
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, { minX: 1, maxX: 1, minY: 1, maxY: 1 }, { setPivot: true, snap: true });
     transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
-    expect(transform).toMatchObject({ anchorX: 1, anchorY: 1, pivotX: 1, pivotY: 1, x: -before.width, y: -before.height });
+    expect(transform).toMatchObject({ anchorMinX: 1, anchorMaxX: 1, anchorMinY: 1, anchorMaxY: 1, pivotX: 1, pivotY: 1, x: -before.width, y: -before.height });
     expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.layoutOverrides?.mobile?.transform).toMatchObject({
       ...mobileBefore,
-      anchorX: 0,
-      anchorY: 0,
+      anchorMinX: 0,
+      anchorMinY: 0,
       pivotX: 0,
       pivotY: 0,
     });
     expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
   });
 
+  it("stretches a node between separated anchors preserving its rendered rectangle", () => {
+    const before = structuredClone(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform);
+    const viewport = useEditorStore.getState().document.scenes[0]!.layout.referenceViewports.desktop;
+
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, { minX: 0, maxX: 1, minY: 0, maxY: 0 }, { setPivot: false, snap: false });
+
+    const transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
+    expect(transform).toMatchObject({ anchorMinX: 0, anchorMaxX: 1, x: before.x, width: before.width - viewport.width, height: before.height });
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+
   it("stores anchor changes in the active mobile profile only", () => {
     useEditorStore.setState({ activeProfile: "mobile" });
-    useEditorStore.getState().setNodeProfileAnchor(textNodeId, 0.5, 0.5, { setPivot: false, snap: false });
+    useEditorStore.getState().setNodeProfileAnchor(textNodeId, { minX: 0.5, maxX: 0.5, minY: 0.5, maxY: 0.5 }, { setPivot: false, snap: false });
 
     const node = useEditorStore.getState().document.scenes[0]!.nodes.find((candidate) => candidate.id === textNodeId)!;
-    expect(node.transform.anchorX).toBeUndefined();
-    expect(node.layoutOverrides?.mobile?.transform).toMatchObject({ anchorX: 0.5, anchorY: 0.5 });
+    expect(node.transform.anchorMinX).toBeUndefined();
+    expect(node.layoutOverrides?.mobile?.transform).toMatchObject({ anchorMinX: 0.5, anchorMaxX: 0.5, anchorMinY: 0.5, anchorMaxY: 0.5 });
   });
 
   it("snaps a nested node to the scene edge instead of its immediate parent edge", () => {
@@ -125,7 +136,7 @@ describe("setNodeProfileAnchor", () => {
     useEditorStore.getState().updateNodeProfileTransform(containerId, { x: 300, y: 200, width: 400, height: 300 });
     useEditorStore.getState().moveNode(imageNodeId, { parentId: containerId, index: 0 });
 
-    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 1, 1, { setPivot: true, snap: true });
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, { minX: 1, maxX: 1, minY: 1, maxY: 1 }, { setPivot: true, snap: true });
 
     const scene = useEditorStore.getState().document.scenes[0]!;
     const image = scene.nodes.find((node) => node.id === imageNodeId)!;

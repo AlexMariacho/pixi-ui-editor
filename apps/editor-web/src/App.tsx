@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
-import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type LayoutSize, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type LayoutSize, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
@@ -20,6 +20,25 @@ const MAX_ZOOM = 8;
 const EMPTY_CONTAINER_GIZMO_SIZE = 100;
 const PIVOT_GIZMO_HALF_SIZE = 6;
 const PIVOT_GIZMO_THICKNESS = 2;
+const ANCHOR_GIZMO_GAP = 2;
+const ANCHOR_GIZMO_LENGTH = 11;
+const ANCHOR_GIZMO_HALF_WIDTH = 4;
+
+/** Unity-подобный «лепесток» якоря: треугольник с вершиной в якорной точке, раскрывающийся наружу по диагонали. */
+function drawAnchorPetal(graphics: Graphics, point: { x: number; y: number }, dirX: number, dirY: number): void {
+  const nx = dirX / Math.SQRT2;
+  const ny = dirY / Math.SQRT2;
+  const baseX = point.x + nx * (ANCHOR_GIZMO_GAP + ANCHOR_GIZMO_LENGTH);
+  const baseY = point.y + ny * (ANCHOR_GIZMO_GAP + ANCHOR_GIZMO_LENGTH);
+  graphics
+    .poly([
+      point.x + nx * ANCHOR_GIZMO_GAP, point.y + ny * ANCHOR_GIZMO_GAP,
+      baseX - ny * ANCHOR_GIZMO_HALF_WIDTH, baseY + nx * ANCHOR_GIZMO_HALF_WIDTH,
+      baseX + ny * ANCHOR_GIZMO_HALF_WIDTH, baseY - nx * ANCHOR_GIZMO_HALF_WIDTH,
+    ])
+    .fill({ color: 0xffffff, alpha: 0.9 })
+    .stroke({ width: 1, color: 0x242424 });
+}
 
 type CanvasBounds = { x: number; y: number; width: number; height: number };
 
@@ -61,6 +80,7 @@ function displayedBounds(nodeView: Container): CanvasBounds {
 
 function selectionBounds(
   node: UINode,
+  owner: { nodes: UINode[]; layout?: { referenceViewports: Record<LayoutProfileId, LayoutSize> } },
   nodesById: ReadonlyMap<string, UINode>,
   nodeViews: ReadonlyMap<string, Container>,
   profile: LayoutProfileId,
@@ -71,7 +91,7 @@ function selectionBounds(
   // Text's glyph bounds and Spine's animated bounds are content details. Anchors, pivots and
   // resize handles operate on the stable width/height layout rectangle for both node types.
   if (node.type === "text" || node.type === "spine" || node.type === "prefab-instance") {
-    const { transform } = resolveProfileTransform(node, profile);
+    const transform = resolveAnchoredTransform(resolveProfileTransform(node, profile).transform, getParentLayoutSize(owner, node, profile));
     return nodeRectBounds(nodeView, transform.width, transform.height);
   }
   if (node.type !== "container") return displayedBounds(nodeView);
@@ -79,7 +99,7 @@ function selectionBounds(
   const childBounds = node.children.flatMap((childId) => {
     const child = nodesById.get(childId);
     if (child === undefined) return [];
-    const bounds = selectionBounds(child, nodesById, nodeViews, profile);
+    const bounds = selectionBounds(child, owner, nodesById, nodeViews, profile);
     return bounds === undefined ? [] : [bounds];
   });
   return unionBounds(childBounds) ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE);
@@ -528,7 +548,8 @@ function getParentLayoutSize(owner: { nodes: UINode[]; layout?: { referenceViewp
     const parent = owner.nodes.find((candidate) => candidate.id === node.parentId);
     if (parent !== undefined) {
       if (owner.layout !== undefined && parent.parentId === null) return owner.layout.referenceViewports[profile];
-      const transform = resolveProfileTransform(parent, profile).transform;
+      // Родитель может быть сам растянут якорями, поэтому его размер разрешается рекурсивно.
+      const transform = resolveAnchoredTransform(resolveProfileTransform(parent, profile).transform, getParentLayoutSize(owner, parent, profile));
       return { width: transform.width, height: transform.height };
     }
   }
@@ -587,7 +608,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     nodeId: string;
     startX: number;
     startY: number;
+    // Rendered-трансформ (якоря уже применены); при коммите офсеты и stretch-дельта вычитаются обратно.
     transform: UINode["transform"];
+    anchorOffsetX: number;
+    anchorOffsetY: number;
+    spanWidth: number;
+    spanHeight: number;
     scaleX: number;
     scaleY: number;
     viewScaleX: number;
@@ -620,18 +646,36 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const node = nodesById.get(nodeId);
       const nodeView = nodeViewsRef.current.get(nodeId);
       if (node === undefined || nodeView === undefined) return [];
-      const bounds = selectionBounds(node, nodesById, nodeViewsRef.current, editorState.activeProfile);
+      const bounds = selectionBounds(node, owner, nodesById, nodeViewsRef.current, editorState.activeProfile);
       if (bounds === undefined) return [];
       selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
       const { transform } = resolveProfileTransform(node, editorState.activeProfile);
+      const parentSize = getParentLayoutSize(owner, node, editorState.activeProfile);
+      const resolvedTransform = resolveAnchoredTransform(transform, parentSize);
       const pivot = nodeView.toGlobal({
-        x: (transform.pivotX ?? 0) * transform.width,
-        y: (transform.pivotY ?? 0) * transform.height,
+        x: (resolvedTransform.pivotX ?? 0) * resolvedTransform.width,
+        y: (resolvedTransform.pivotY ?? 0) * resolvedTransform.height,
       });
       selectionGraphics
         .rect(pivot.x - PIVOT_GIZMO_HALF_SIZE, pivot.y - PIVOT_GIZMO_THICKNESS / 2, PIVOT_GIZMO_HALF_SIZE * 2, PIVOT_GIZMO_THICKNESS)
         .rect(pivot.x - PIVOT_GIZMO_THICKNESS / 2, pivot.y - PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, PIVOT_GIZMO_HALF_SIZE * 2)
         .fill(0xffffff);
+      const parentView = nodeView.parent;
+      if (parentView !== null && parentSize !== undefined) {
+        const anchorMinX = transform.anchorMinX ?? 0;
+        const anchorMinY = transform.anchorMinY ?? 0;
+        const anchorMaxX = transform.anchorMaxX ?? anchorMinX;
+        const anchorMaxY = transform.anchorMaxY ?? anchorMinY;
+        for (const [anchorX, anchorY, dirX, dirY] of [
+          [anchorMinX, anchorMinY, -1, -1],
+          [anchorMaxX, anchorMinY, 1, -1],
+          [anchorMinX, anchorMaxY, -1, 1],
+          [anchorMaxX, anchorMaxY, 1, 1],
+        ] as const) {
+          const point = parentView.toGlobal({ x: anchorX * parentSize.width, y: anchorY * parentSize.height });
+          drawAnchorPetal(selectionGraphics, point, dirX, dirY);
+        }
+      }
       return [{ node, nodeView, bounds }];
     });
 
@@ -727,7 +771,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const nodesById = new Map(owner?.nodes.map((node) => [node.id, node]) ?? []);
         const selectedIds = owner?.nodes.flatMap((node) => {
           if (node.id === technicalRootId) return [];
-          const bounds = selectionBounds(node, nodesById, nodeViewsRef.current, state.activeProfile);
+          const bounds = owner === undefined ? undefined : selectionBounds(node, owner, nodesById, nodeViewsRef.current, state.activeProfile);
           if (bounds === undefined) return [];
           const intersects = bounds.x <= area.x + area.width && bounds.x + bounds.width >= area.x
             && bounds.y <= area.y + area.height && bounds.y + bounds.height >= area.y;
@@ -886,8 +930,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
             y: nodeView.position.y,
             pivotX: nodeView.pivot.x,
             pivotY: nodeView.pivot.y,
-            anchorOffsetX: (transform.anchorX ?? 0) * (parentSize?.width ?? 0),
-            anchorOffsetY: (transform.anchorY ?? 0) * (parentSize?.height ?? 0),
+            anchorOffsetX: (transform.anchorMinX ?? 0) * (parentSize?.width ?? 0),
+            anchorOffsetY: (transform.anchorMinY ?? 0) * (parentSize?.height ?? 0),
           }];
         });
         if (entries.length === 0) return;
@@ -904,7 +948,14 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         application.stage.off("pointermove", moveResizedNode);
         application.stage.off("pointerup", stopResize);
         application.stage.off("pointerupoutside", stopResize);
-        if (Object.keys(drag.patch).length > 0) useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, drag.patch);
+        if (Object.keys(drag.patch).length === 0) return;
+        // patch посчитан в rendered-координатах — переводим обратно в хранимые (минус якорный офсет и stretch-дельта).
+        const patch = { ...drag.patch };
+        if (patch.x !== undefined) patch.x = roundTransformValue(patch.x - drag.anchorOffsetX);
+        if (patch.y !== undefined) patch.y = roundTransformValue(patch.y - drag.anchorOffsetY);
+        if (patch.width !== undefined) patch.width = roundTransformValue(patch.width - drag.spanWidth);
+        if (patch.height !== undefined) patch.height = roundTransformValue(patch.height - drag.spanHeight);
+        useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, patch);
       };
       const moveResizedNode = (event: FederatedPointerEvent) => {
         const drag = resizeDragRef.current;
@@ -950,20 +1001,26 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const state = useEditorStore.getState();
         const nodeId = state.selectedNodeId;
         if (nodeId === null) return;
-        const node = getEditingTarget(state.document, state)?.nodes.find((candidate) => candidate.id === nodeId);
+        const owner = getEditingTarget(state.document, state);
+        const node = owner?.nodes.find((candidate) => candidate.id === nodeId);
         const nodeView = nodeViewsRef.current.get(nodeId);
         const parentView = nodeView?.parent;
-        if (node === undefined || nodeView === undefined || parentView === null || parentView === undefined) return;
+        if (owner === undefined || node === undefined || nodeView === undefined || parentView === null || parentView === undefined) return;
 
         event.stopPropagation();
         const position = parentView.toLocal(event.global);
-        const transform = resolveProfileTransform(node, state.activeProfile).transform;
+        const stored = resolveProfileTransform(node, state.activeProfile).transform;
+        const transform = resolveAnchoredTransform(stored, getParentLayoutSize(owner, node, state.activeProfile));
         resizeDragRef.current = {
           handle,
           nodeId,
           startX: position.x,
           startY: position.y,
           transform: { ...transform },
+          anchorOffsetX: transform.x - stored.x,
+          anchorOffsetY: transform.y - stored.y,
+          spanWidth: transform.width - stored.width,
+          spanHeight: transform.height - stored.height,
           scaleX: nodeView.width / transform.width,
           scaleY: nodeView.height / transform.height,
           viewScaleX: nodeView.scale.x,

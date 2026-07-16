@@ -40,8 +40,14 @@ describe("sample project loader smoke test", () => {
   });
 
   it("resolves normalized anchors against the parent rectangle", () => {
-    const transform = { x: -160, y: -50, width: 320, height: 100, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0.5, anchorY: 1 };
-    expect(resolveAnchoredTransform(transform, { width: 1920, height: 1080 })).toMatchObject({ x: 800, y: 1030 });
+    const transform = { x: -160, y: -50, width: 320, height: 100, scaleX: 1, scaleY: 1, rotation: 0, anchorMinX: 0.5, anchorMaxX: 0.5, anchorMinY: 1, anchorMaxY: 1 };
+    expect(resolveAnchoredTransform(transform, { width: 1920, height: 1080 })).toMatchObject({ x: 800, y: 1030, width: 320, height: 100 });
+  });
+
+  it("stretches a node between separated anchors following the parent size", () => {
+    const transform = { x: 10, y: 20, width: -30, height: 100, scaleX: 1, scaleY: 1, rotation: 0, anchorMinX: 0, anchorMaxX: 1, anchorMinY: 0.5, anchorMaxY: 0.5 };
+    expect(resolveAnchoredTransform(transform, { width: 1920, height: 1080 })).toMatchObject({ x: 10, y: 560, width: 1890, height: 100 });
+    expect(resolveAnchoredTransform(transform, { width: 800, height: 1080 })).toMatchObject({ x: 10, width: 770 });
   });
 
   it("resolves the viewport profile on both sides of the breakpoint and picks mobile exactly on it", () => {
@@ -73,14 +79,14 @@ describe("sample project loader smoke test", () => {
 
     const anchoredDocument = clone(document);
     const anchoredNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
-    anchoredNode.transform = { ...anchoredNode.transform, anchorX: 1, pivotX: 1, x: -anchoredNode.transform.width };
+    anchoredNode.transform = { ...anchoredNode.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: -anchoredNode.transform.width };
     const anchoredView = buildSceneView(anchoredDocument, ids.scene, "desktop", new Map([[ids.asset, Texture.WHITE]])).nodeViews.get(ids.image)!;
     const anchoredSprite = anchoredView.children[0] as Sprite;
     const renderedRight = anchoredView.position.x + (anchoredSprite.width - anchoredView.pivot.x) * anchoredView.scale.x;
     expect(renderedRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.desktop.width);
 
     const mobileNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
-    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorX: 1, pivotX: 1, x: -320 };
+    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: -320 };
     const mobileView = buildSceneView(anchoredDocument, ids.scene, "mobile", new Map([[ids.asset, Texture.WHITE]])).nodeViews.get(ids.image)!;
     const mobileSprite = mobileView.children[0] as Sprite;
     const mobileRight = mobileView.position.x + (mobileSprite.width - mobileView.pivot.x) * mobileView.scale.x;
@@ -94,7 +100,7 @@ describe("sample project loader smoke test", () => {
     const image = scene.nodes.find((node) => node.id === ids.image)!;
     const text = scene.nodes.find((node) => node.id === ids.text)!;
     const spineId = "10000000-0000-4000-8000-000000000007";
-    const transform = { x: -240, y: -90, width: 320, height: 180, scaleX: 1.25, scaleY: 0.75, rotation: 0.2, anchorX: 1, anchorY: 0.5, pivotX: 0.75, pivotY: 0.5 };
+    const transform = { x: -240, y: -90, width: 320, height: 180, scaleX: 1.25, scaleY: 0.75, rotation: 0.2, anchorMinX: 1, anchorMaxX: 1, anchorMinY: 0.5, anchorMaxY: 0.5, pivotX: 0.75, pivotY: 0.5 };
     image.transform = { ...transform };
     text.transform = { ...transform };
     const spine: UINode = { id: spineId, name: "Spine", type: "spine", assetId: ids.asset, parentId: ids.root, children: [], visible: true, transform: { ...transform } };
