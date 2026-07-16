@@ -1,72 +1,72 @@
 # Pixi UI Editor
 
-Pixi UI Editor — web-first редактор для сборки presentation-слоя игрового UI на PixiJS. Он позволяет дизайнеру собрать структуру интерфейса, настроить её для разных экранов, добавить графические и Spine-ассеты, переиспользовать фрагменты через пресеты и выгрузить пакет, который воспроизводится общим PixiJS runtime.
+Pixi UI Editor is a web-first editor for building the presentation layer of a PixiJS game UI. It lets designers compose an interface hierarchy, adapt it to different screens, add image and Spine assets, reuse fragments as presets, and export a package reproduced by a shared PixiJS runtime.
 
-Редактор не является игровым движком и не хранит gameplay-логику. Документ описывает только UI: иерархию, ассеты, layout-профили, трансформы, якоря и ссылки на пресеты. Поведение игры подключается отдельно через bindings и игровой код.
+The editor is not a game engine and does not contain gameplay logic. Its document describes UI only: hierarchy, assets, layout profiles, transforms, anchors, and preset references. Game behavior is connected separately through bindings and game code.
 
-## Основная концепция
+## Core concept
 
-- **Один декларативный документ.** В документ не сериализуются объекты PixiJS; его можно валидировать, мигрировать и детерминированно сериализовать.
-- **Stable ID вместо имён и путей.** Node, asset, scene и preset имеют неизменяемые идентификаторы; замена файла ассета не ломает ссылки.
-- **Одна hierarchy и layout-профили.** Desktop и mobile — не копии сцен. Для каждой ноды можно независимо задать overrides transform и visibility для horizontal и vertical профилей.
-- **Якоря относительно родителя.** Поддерживаются точечные и stretch-якоря; stretch-хранит размеры как отступы от якорного прямоугольника. Это позволяет UI адаптироваться к размеру родительского контейнера.
-- **Один runtime для редактора и игры.** Canvas редактора, отдельный Preview и приложение-потребитель используют `packages/runtime-pixi`, поэтому layout resolver и правила рендеринга не дублируются.
-- **Публикуемый пакет неизменяем.** Export формирует самодостаточный ZIP с `project.json` и файлами ассетов; сохранённый в браузере draft сам по себе не является контрактом игры.
+- **One declarative document.** PixiJS objects are not serialized into the document; it can be validated, migrated, and deterministically serialized.
+- **Stable IDs instead of names and paths.** Nodes, assets, scenes, and presets have immutable identifiers, so replacing an asset file does not break references.
+- **One hierarchy and layout profiles.** Desktop and mobile are not duplicate scenes. Each node can have independent transform and visibility overrides for horizontal and vertical profiles.
+- **Parent-relative anchors.** Both point and stretch anchors are supported; stretch stores dimensions as offsets from its anchor rectangle. This lets UI adapt to the parent container size.
+- **One runtime for editor and game.** The editor canvas, standalone Preview, and consuming application use `packages/runtime-pixi`, so the layout resolver and rendering rules are not duplicated.
+- **An immutable publishable package.** Export creates a self-contained ZIP with `project.json` and asset files; a browser-saved draft is not itself a game contract.
 
-Подробное продуктовое описание находится в [концепции платформы](docs/game-ui-authoring-platform-concept.md), а границы MVP и порядок дальнейшей работы — в [плане реализации](docs/game-ui-platform-implementation-plan-mvp-v3.md).
+The [platform concept](docs/game-ui-authoring-platform-concept.md) provides the full product description; the [implementation plan](docs/game-ui-platform-implementation-plan-mvp-v3.md) defines the MVP scope and upcoming work order.
 
-## Что уже работает
+## What already works
 
-В `apps/editor-web` доступен работающий браузерный прототип:
+`apps/editor-web` contains a working browser prototype with:
 
-- редактирование нескольких окон проекта и обзор всех окон в режиме **Map**;
-- общая hierarchy: selection, multi-selection, drag-and-drop, создание, переименование, удаление и изменение порядка нод;
-- canvas-инструменты Select, Pan и Resize, гизмосы выделения и якорей;
-- Inspector для transform, visibility, pivot, якорей, текстовых, image- и Spine-нод;
-- отдельные horizontal/vertical layout-профили с независимыми transforms и reference viewport; готовые desktop/tablet/mobile presets и ручной ввод разрешения;
-- image-ассеты: загрузка, замена файла с сохранением ID, назначение нодам, просмотр и безопасное удаление только неиспользуемых ассетов;
-- Spine-ассеты: загрузка, просмотр анимаций, loop, scrubbing по времени и кадрам;
-- плавающие и сохраняющие свои настройки окна **Assets** и **Presets**; Assets имеет compact/list/grid представления;
-- presets: создание из фрагмента сцены, prefab-instance ноды, вход в режим редактирования пресета и read-only отображение его спроецированного содержимого в hierarchy;
-- Preview выбранного окна в отдельном popup без editor overlays, с масштабированием fixed layout при ручном изменении размера окна;
-- Export ZIP-пакета: `project.json` и все используемые файлы в `assets/<assetId>/<fileName>`;
-- сохранение документа и UI-preferences в browser `localStorage`, а также **Reset to sample** для возврата к эталонному проекту;
-- единый command registry для действий toolbar и клавиатуры, включая Select/Pan/Resize/Map и Delete.
+- editing multiple project windows and viewing all windows in **Map** mode;
+- a shared hierarchy: selection, multi-selection, drag and drop, node creation, renaming, deletion, and reordering;
+- Select, Pan, and Resize canvas tools, plus selection and anchor gizmos;
+- an Inspector for transforms, visibility, pivots, anchors, text, image, and Spine nodes;
+- separate horizontal and vertical layout profiles with independent transforms and reference viewports; desktop, tablet, and mobile presets plus manual resolution entry;
+- image assets: upload, replace while preserving an ID, assign to nodes, preview, and safely delete only unused assets;
+- Spine assets: upload, animation preview, looping, and time/frame scrubbing;
+- floating **Assets** and **Presets** windows that persist their settings; Assets supports compact, list, and grid views;
+- presets: create from a scene fragment, prefab-instance nodes, preset editing mode, and read-only projected preset content in the hierarchy;
+- Preview of the selected window in a separate popup without editor overlays; it scales a fixed layout when the popup is resized manually;
+- ZIP package export containing `project.json` and all used files under `assets/<assetId>/<fileName>`;
+- document and UI-preference persistence in browser `localStorage`, plus **Reset to sample** to restore the reference project;
+- a single command registry for toolbar and keyboard actions, including Select, Pan, Resize, Map, and Delete.
 
-Текущая история итераций и принятые решения перечислены в [документации](docs/README.md) и [ADR](docs/adr/).
+The current iteration history and accepted decisions are listed in the [documentation](docs/README.md) and [ADRs](docs/adr/).
 
-## Структура репозитория
+## Repository structure
 
-Это один pnpm workspace ([pnpm-workspace.yaml](pnpm-workspace.yaml)).
+This is a single pnpm workspace ([pnpm-workspace.yaml](pnpm-workspace.yaml)).
 
-- `apps/editor-web/` — работающий React/Vite редактор;
-- `packages/schema/` — контракт документа: типы, runtime schema, validation, migrations и deterministic serialization;
-- `packages/runtime-pixi/` — загрузка документа, profile resolver и общий PixiJS renderer;
-- `examples/sample-project/` — version-controlled эталонный документ для smoke-тестов;
-- `examples/pixi-app/` — минимальное PixiJS-приложение, воспроизводящее экспортированный package;
-- `apps/api/`, `apps/runtime-demo/`, `packages/editor-core/`, `packages/exporter/`, `packages/validators/`, `packages/shared/` — заготовки для следующих этапов.
+- `apps/editor-web/` — the working React/Vite editor;
+- `packages/schema/` — the document contract: types, runtime schema, validation, migrations, and deterministic serialization;
+- `packages/runtime-pixi/` — document loading, the profile resolver, and the shared PixiJS renderer;
+- `examples/sample-project/` — the version-controlled reference document for smoke tests;
+- `examples/pixi-app/` — a minimal PixiJS application that reproduces an exported package;
+- `apps/api/`, `apps/runtime-demo/`, `packages/editor-core/`, `packages/exporter/`, `packages/validators/`, and `packages/shared/` — placeholders for later stages.
 
-## Требования
+## Requirements
 
-- Node.js **20.19+ или 22.12+**; рекомендуется Node.js 22 LTS;
+- Node.js **20.19+ or 22.12+**; Node.js 22 LTS is recommended;
 - pnpm 10.
 
-`apps/editor-web` использует Vite 7. Node.js 20.11.0 может собрать workspace и запустить тесты, но не запускает dev-server: Vite завершится с `TypeError: crypto.hash is not a function`.
+`apps/editor-web` uses Vite 7. Node.js 20.11.0 can build the workspace and run tests, but cannot start the dev server: Vite fails with `TypeError: crypto.hash is not a function`.
 
 ```powershell
 node --version
 pnpm --version
 ```
 
-Если `pnpm` отсутствует в `PATH`:
+If `pnpm` is not on your `PATH`:
 
 ```powershell
 npm install -g pnpm@10.27.0
 ```
 
-## Первый запуск и проверки
+## First run and checks
 
-Из корня репозитория:
+From the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -75,28 +75,28 @@ pnpm typecheck
 pnpm test
 ```
 
-`pnpm build` нужно выполнить до `pnpm typecheck`: типы межпакетных импортов резолвятся из `dist/`. Проект намеренно использует небольшой набор контрактных и pipeline-тестов вместо coverage quota; правила описаны в [стратегии тестирования](docs/testing-strategy.md).
+Run `pnpm build` before `pnpm typecheck`: inter-package import types are resolved from `dist/`. The project deliberately uses a small set of contract and pipeline tests rather than a coverage quota; see the [testing strategy](docs/testing-strategy.md).
 
-## Запуск редактора
+## Run the editor
 
 ```powershell
 pnpm --filter @pixi-ui-editor/editor-web dev
 ```
 
-Откройте URL из вывода Vite (обычно `http://localhost:5173/`). Если порт занят, Vite выберет другой. При первом открытии загружается sample project; последующие изменения автоматически восстанавливаются из `localStorage`.
+Open the URL printed by Vite (normally `http://localhost:5173/`). If the port is in use, Vite picks another one. The sample project loads on first launch; subsequent changes are restored automatically from `localStorage`.
 
-Для проверки production bundle:
+To inspect the production bundle:
 
 ```powershell
 pnpm build
 pnpm --filter @pixi-ui-editor/editor-web preview
 ```
 
-`preview` раздаёт уже собранный `apps/editor-web/dist`; после новой сборки его нужно перезапустить.
+`preview` serves the already-built `apps/editor-web/dist`; restart it after another build.
 
-## Smoke-тест документа
+## Document smoke test
 
-Эталонный [sample project](examples/sample-project/project.json) загружается через headless runtime boundary:
+The reference [sample project](examples/sample-project/project.json) is loaded through the headless runtime boundary:
 
 ```powershell
 pnpm --filter @pixi-ui-editor/runtime-pixi test
