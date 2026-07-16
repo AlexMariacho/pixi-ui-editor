@@ -65,7 +65,6 @@ export type EditorState = {
   renamePrefab(prefabId: string, name: string): void;
   deletePrefab(prefabId: string): void;
   setEditingPrefabId(prefabId: string | null): void;
-  resetToSample(): void;
 };
 
 const sampleDocument = loadProjectDocument(sampleJson);
@@ -155,7 +154,6 @@ function computePrefabBoundingBox(prefab: PrefabDefinition): { width: number; he
   return { width: maxX - minX, height: maxY - minY };
 }
 
-let skipNextPersistence = false;
 const initialDocument = loadInitialDocument();
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -817,22 +815,11 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
     return { editingPrefabId: prefabId, selectedNodeIds: [], selectedNodeId: null, viewMode: "single" };
   }),
-  resetToSample: () => set(() => {
-    if (typeof localStorage !== "undefined") {
-      skipNextPersistence = true;
-      localStorage.removeItem(DOCUMENT_STORAGE_KEY);
-    }
-    return { document: structuredClone(sampleDocument), sceneId: firstScene.id, selectedNodeIds: [], selectedNodeId: null, editingPrefabId: null };
-  }),
 }));
 
 useEditorStore.subscribe((state, previousState) => {
   if (state.document === previousState.document) return;
   if (typeof localStorage === "undefined") return;
-  if (skipNextPersistence) {
-    skipNextPersistence = false;
-    return;
-  }
 
   try {
     localStorage.setItem(DOCUMENT_STORAGE_KEY, serializeProjectDocument(state.document));

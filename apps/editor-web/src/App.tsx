@@ -1302,7 +1302,6 @@ export function App() {
   const addNode = useEditorStore((state) => state.addNode);
   const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
   const addPrefabInstance = useEditorStore((state) => state.addPrefabInstance);
-  const resetToSample = useEditorStore((state) => state.resetToSample);
   const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const setEditingPrefabId = useEditorStore((state) => state.setEditingPrefabId);
@@ -1354,7 +1353,6 @@ export function App() {
         <span>{document.project.name}</span>
         <div className="toolbar-actions">
           <button type="button" onClick={() => { void downloadProjectPackage(document, resolveFileUrl); }}>Export</button>
-          <button type="button" onClick={resetToSample}>Reset to sample</button>
         </div>
       </header>
       <aside className="panel hierarchy-panel">
