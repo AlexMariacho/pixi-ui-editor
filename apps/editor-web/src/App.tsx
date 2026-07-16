@@ -10,6 +10,7 @@ import { AssetsWindow } from "./AssetPanel.js";
 import { NODE_DRAG_TYPE, PREFAB_DRAG_TYPE, PresetsWindow } from "./PresetsPanel.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry, isEditorTextInput, type EditorCommandId } from "./editorCommands.js";
+import { openRuntimePreview, updateRuntimePreviews, type PreviewPayload } from "./RuntimePreview.js";
 
 const CANVAS_BACKGROUND = 0x181818;
 const ARTBOARD_FILL = 0x1e1e2e;
@@ -1396,6 +1397,12 @@ export function App() {
   const updateReferenceViewport = useEditorStore((state) => state.updateReferenceViewport);
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const setEditingPrefabId = useEditorStore((state) => state.setEditingPrefabId);
+  const previewPayloadRef = useRef<PreviewPayload>({ document, sceneId, profile: activeProfile });
+  previewPayloadRef.current = { document, sceneId, profile: activeProfile };
+
+  useEffect(() => {
+    updateRuntimePreviews(previewPayloadRef.current);
+  }, [activeProfile, sceneId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1443,6 +1450,11 @@ export function App() {
         <ScreenResolutionsMenu activeProfile={activeProfile} viewport={viewport} setActiveProfile={setActiveProfile} updateReferenceViewport={updateReferenceViewport} />
         <span>{document.project.name}</span>
         <div className="toolbar-actions">
+          <button type="button" onClick={() => {
+            if (!openRuntimePreview({ document, sceneId, profile: activeProfile }, viewport)) {
+              window.alert("Preview window was blocked by the browser. Allow popups for this site and try again.");
+            }
+          }}>Preview</button>
           <button type="button" onClick={() => { void downloadProjectPackage(document, resolveFileUrl); }}>Export</button>
         </div>
       </header>
