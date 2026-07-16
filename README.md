@@ -69,6 +69,14 @@ Stop the server with `Ctrl+C`.
 
 The prototype supports hierarchy selection, inspector editing, canvas drag, node creation/deletion, and automatic restoration of the edited document from browser `localStorage`. Use `Reset to sample` in the toolbar to discard the saved draft and return to the reference project.
 
+Use **Preview** in the toolbar to open the selected project window in a separate
+browser popup rendered by the shared PixiJS runtime. The popup requests half of
+the active reference resolution in the same orientation. Resize it normally to
+check scale-to-fit behavior without changing the selected layout profile.
+Switching orientation or selecting another project window in the editor fully
+rebuilds the open runtime preview. Allow popups for the editor origin if the
+browser blocks the window.
+
 To inspect the production bundle locally:
 
 ```powershell

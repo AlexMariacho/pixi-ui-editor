@@ -28,6 +28,26 @@ body { margin: 0; }
 
 #root { min-height: 100vh; }
 
+.runtime-preview {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #101018;
+}
+
+.runtime-preview canvas { display: block; }
+
+.runtime-preview-error {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 1;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+  color: var(--danger);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
 .editor-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 280px;
