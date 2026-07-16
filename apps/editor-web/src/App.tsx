@@ -18,6 +18,8 @@ const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
 const EMPTY_CONTAINER_GIZMO_SIZE = 100;
+const PIVOT_GIZMO_HALF_SIZE = 6;
+const PIVOT_GIZMO_THICKNESS = 2;
 
 type CanvasBounds = { x: number; y: number; width: number; height: number };
 
@@ -68,7 +70,7 @@ function selectionBounds(
 
   // Text's glyph bounds and Spine's animated bounds are content details. Anchors, pivots and
   // resize handles operate on the stable width/height layout rectangle for both node types.
-  if (node.type === "text" || node.type === "spine") {
+  if (node.type === "text" || node.type === "spine" || node.type === "prefab-instance") {
     const { transform } = resolveProfileTransform(node, profile);
     return nodeRectBounds(nodeView, transform.width, transform.height);
   }
@@ -621,16 +623,21 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const bounds = selectionBounds(node, nodesById, nodeViewsRef.current, editorState.activeProfile);
       if (bounds === undefined) return [];
       selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
+      const { transform } = resolveProfileTransform(node, editorState.activeProfile);
+      const pivot = nodeView.toGlobal({
+        x: (transform.pivotX ?? 0) * transform.width,
+        y: (transform.pivotY ?? 0) * transform.height,
+      });
+      selectionGraphics
+        .rect(pivot.x - PIVOT_GIZMO_HALF_SIZE, pivot.y - PIVOT_GIZMO_THICKNESS / 2, PIVOT_GIZMO_HALF_SIZE * 2, PIVOT_GIZMO_THICKNESS)
+        .rect(pivot.x - PIVOT_GIZMO_THICKNESS / 2, pivot.y - PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, PIVOT_GIZMO_HALF_SIZE * 2)
+        .fill(0xffffff);
       return [{ node, nodeView, bounds }];
     });
 
     if (resizeHandles === null || selectedBounds.length !== 1) return;
     const [{ node, nodeView, bounds }] = selectedBounds;
     if (node.type === "container") {
-      const matrix = nodeView.getGlobalTransform();
-      selectionGraphics
-        .circle(matrix.tx, matrix.ty, 4)
-        .stroke({ width: 1.5, color: 0xffffff });
       const moveHandle = new Graphics()
         .circle(0, 0, 8)
         .fill(SELECTION_COLOR)
