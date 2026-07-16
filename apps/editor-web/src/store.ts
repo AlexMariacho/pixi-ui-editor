@@ -1,4 +1,4 @@
-import { loadProjectDocument, parseProjectDocumentJson, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
+import { loadProjectDocument, parseProjectDocumentJson, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
 import {
   createStableId,
   serializeProjectDocument,
@@ -13,7 +13,7 @@ import {
 import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
 import { getCachedImageAssetSize } from "./assets.js";
-import { getNodeWorldMatrix, transformRelativeToParent } from "./transformCoordinates.js";
+import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "./transformCoordinates.js";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
@@ -44,6 +44,7 @@ export type EditorState = {
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   updateNodeProfileTransforms(updates: { nodeId: string; patch: Partial<UINode["transform"]> }[]): void;
+  setNodeProfileAnchor(nodeId: string, anchorX: number, anchorY: number, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
@@ -120,6 +121,63 @@ function createSceneRoot(scene: Pick<Scene, "layout">): UINode {
     transform: { x: 0, y: 0, width: desktop.width, height: desktop.height, scaleX: 1, scaleY: 1, rotation: 0 },
     layoutOverrides: { mobile: { transform: { width: mobile.width, height: mobile.height } } },
   };
+}
+
+function getParentLayoutSize(target: EditingTarget, node: UINode, profile: LayoutProfileId): LayoutSize {
+  if (node.parentId !== null) {
+    const parent = target.nodes.find((candidate) => candidate.id === node.parentId);
+    if (parent !== undefined) {
+      if ("layout" in target && parent.parentId === null) return target.layout.referenceViewports[profile];
+      const transform = resolveProfileTransform(parent, profile).transform;
+      return { width: transform.width, height: transform.height };
+    }
+  }
+  return "layout" in target ? target.layout.referenceViewports[profile] : { width: 0, height: 0 };
+}
+
+/** Changes the anchor without jumping; Shift can also move the pivot, while Shift+Ctrl snaps it in scene space. */
+export function createAnchorPatch(
+  transform: UINode["transform"],
+  parentSize: LayoutSize,
+  anchorX: number,
+  anchorY: number,
+  options: { setPivot: boolean; snap: boolean },
+  snapPointInParent?: { x: number; y: number },
+): Partial<UINode["transform"]> {
+  const patch: Partial<UINode["transform"]> = { anchorX, anchorY };
+  const nextPivotX = options.setPivot ? anchorX : (transform.pivotX ?? 0);
+  const nextPivotY = options.setPivot ? anchorY : (transform.pivotY ?? 0);
+
+  if (options.setPivot) {
+    patch.pivotX = nextPivotX;
+    patch.pivotY = nextPivotY;
+  }
+  if (options.snap) {
+    const snapPoint = snapPointInParent ?? { x: anchorX * parentSize.width, y: anchorY * parentSize.height };
+    patch.x = snapPoint.x - anchorX * parentSize.width - nextPivotX * transform.width;
+    patch.y = snapPoint.y - anchorY * parentSize.height - nextPivotY * transform.height;
+    return patch;
+  }
+
+  let x = transform.x + ((transform.anchorX ?? 0) - anchorX) * parentSize.width;
+  let y = transform.y + ((transform.anchorY ?? 0) - anchorY) * parentSize.height;
+  if (options.setPivot) {
+    const oldPivotX = (transform.pivotX ?? 0) * transform.width;
+    const oldPivotY = (transform.pivotY ?? 0) * transform.height;
+    const newPivotX = nextPivotX * transform.width;
+    const newPivotY = nextPivotY * transform.height;
+    const cosine = Math.cos(transform.rotation);
+    const sine = Math.sin(transform.rotation);
+    const a = cosine * transform.scaleX;
+    const b = sine * transform.scaleX;
+    const c = -sine * transform.scaleY;
+    const d = cosine * transform.scaleY;
+    x += oldPivotX - a * oldPivotX - c * oldPivotY - newPivotX + a * newPivotX + c * newPivotY;
+    y += oldPivotY - b * oldPivotX - d * oldPivotY - newPivotY + b * newPivotX + d * newPivotY;
+  }
+  patch.x = x;
+  patch.y = y;
+  return patch;
 }
 
 /** Возвращает текущего владельца nodes: редактируемый пресет либо активное окно. */
@@ -271,6 +329,15 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     scene.layout.referenceViewports[profile] = { ...viewport };
+    const root = getSceneRoot(scene);
+    if (root !== undefined) {
+      if (profile === "desktop") root.transform = { ...root.transform, width: viewport.width, height: viewport.height };
+      else {
+        root.layoutOverrides ??= {};
+        root.layoutOverrides.mobile ??= {};
+        root.layoutOverrides.mobile.transform = { ...root.layoutOverrides.mobile.transform, width: viewport.width, height: viewport.height };
+      }
+    }
     return commitCandidate(state, candidate, "Reference viewport update was rejected because it makes the project document invalid.");
   }),
   updateNode: (nodeId, patch) => set((state) => {
@@ -335,6 +402,51 @@ export const useEditorStore = create<EditorState>((set) => ({
     }
 
     return commitCandidate(state, candidate, "Node transform updates were rejected because they make the project document invalid.");
+  }),
+  setNodeProfileAnchor: (nodeId, anchorX, anchorY, options) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const target = getEditingTarget(candidate, state);
+    const node = target?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (target === undefined || node === undefined) {
+      console.warn(`Cannot update node anchor '${nodeId}': it does not exist in the editing target.`);
+      return state;
+    }
+
+    const transform = resolveProfileTransform(node, state.activeProfile).transform;
+    const parentSize = getParentLayoutSize(target, node, state.activeProfile);
+    let snapPointInParent: { x: number; y: number } | undefined;
+    if (options.snap && "layout" in target) {
+      const viewport = target.layout.referenceViewports[state.activeProfile];
+      const parentWorldMatrix = node.parentId === null ? undefined : getNodeWorldMatrix(target, node.parentId, state.activeProfile);
+      snapPointInParent = worldPointToLocal(parentWorldMatrix, {
+        x: anchorX * viewport.width,
+        y: anchorY * viewport.height,
+      });
+    }
+    const patch = createAnchorPatch(transform, parentSize, anchorX, anchorY, options, snapPointInParent);
+    if (state.activeProfile === "desktop") {
+      const previousMobile = resolveProfileTransform(node, "mobile").transform;
+      const previousMobileOverride = node.layoutOverrides?.mobile?.transform;
+      node.transform = { ...node.transform, ...patch };
+      const inheritedKeys = (Object.keys(patch) as (keyof UINode["transform"])[])
+        .filter((key) => previousMobileOverride?.[key] === undefined);
+      if (inheritedKeys.length > 0) {
+        node.layoutOverrides ??= {};
+        node.layoutOverrides.mobile ??= {};
+        const mobilePatch: Partial<UINode["transform"]> = {};
+        for (const key of inheritedKeys) {
+          const value = previousMobile[key] ?? ((key === "anchorX" || key === "anchorY" || key === "pivotX" || key === "pivotY") ? 0 : undefined);
+          if (value !== undefined) mobilePatch[key] = value;
+        }
+        node.layoutOverrides.mobile.transform = { ...node.layoutOverrides.mobile.transform, ...mobilePatch };
+      }
+    }
+    else {
+      node.layoutOverrides ??= {};
+      node.layoutOverrides.mobile ??= {};
+      node.layoutOverrides.mobile.transform = { ...node.layoutOverrides.mobile.transform, ...patch };
+    }
+    return commitCandidate(state, candidate, "Node anchor update was rejected because it makes the project document invalid.");
   }),
   setNodeOrientationVisibility: (nodeId, profile, visible) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -593,7 +705,12 @@ export const useEditorStore = create<EditorState>((set) => ({
           console.warn(`Cannot move node '${nodeId}': preserving its visual transform would require skew or an invertible destination parent.`);
           return state;
         }
-        preservedTransforms.set(profile, preserved);
+        const destinationParentSize = getParentLayoutSize(target, { ...node, parentId: placement.parentId }, profile);
+        preservedTransforms.set(profile, {
+          ...preserved,
+          x: preserved.x - (preserved.anchorX ?? 0) * destinationParentSize.width,
+          y: preserved.y - (preserved.anchorY ?? 0) * destinationParentSize.height,
+        });
       }
     }
 

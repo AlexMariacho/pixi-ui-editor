@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./store.js";
+import { getNodeWorldMatrix } from "./transformCoordinates.js";
 import { imageNodeId, initialDocument, textNodeId } from "./store.test-utils.js";
 
 describe("scenes", () => {
@@ -81,6 +82,62 @@ describe("updateNodeProfileTransform", () => {
     useEditorStore.getState().updateNodeProfileTransform(textNodeId, { x: 20 });
 
     expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === textNodeId)!.transform.x).toBe(20);
+  });
+});
+
+describe("setNodeProfileAnchor", () => {
+  it("changes an anchor without moving the node, then Shift+Ctrl snaps its matching pivot to the scene edge", () => {
+    const before = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
+    const mobileBefore = structuredClone(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.layoutOverrides?.mobile?.transform);
+    const parentWidth = useEditorStore.getState().document.scenes[0]!.layout.referenceViewports.desktop.width;
+
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 0.5, 0, { setPivot: false, snap: false });
+    let transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
+    expect(transform).toMatchObject({ anchorX: 0.5, anchorY: 0, x: before.x - parentWidth * 0.5, y: before.y });
+
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 1, 1, { setPivot: true, snap: true });
+    transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
+    expect(transform).toMatchObject({ anchorX: 1, anchorY: 1, pivotX: 1, pivotY: 1, x: -before.width, y: -before.height });
+    expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.layoutOverrides?.mobile?.transform).toMatchObject({
+      ...mobileBefore,
+      anchorX: 0,
+      anchorY: 0,
+      pivotX: 0,
+      pivotY: 0,
+    });
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+
+  it("stores anchor changes in the active mobile profile only", () => {
+    useEditorStore.setState({ activeProfile: "mobile" });
+    useEditorStore.getState().setNodeProfileAnchor(textNodeId, 0.5, 0.5, { setPivot: false, snap: false });
+
+    const node = useEditorStore.getState().document.scenes[0]!.nodes.find((candidate) => candidate.id === textNodeId)!;
+    expect(node.transform.anchorX).toBeUndefined();
+    expect(node.layoutOverrides?.mobile?.transform).toMatchObject({ anchorX: 0.5, anchorY: 0.5 });
+  });
+
+  it("snaps a nested node to the scene edge instead of its immediate parent edge", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("container");
+    const containerId = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!.id;
+    useEditorStore.getState().updateNodeProfileTransform(containerId, { x: 300, y: 200, width: 400, height: 300 });
+    useEditorStore.getState().moveNode(imageNodeId, { parentId: containerId, index: 0 });
+
+    useEditorStore.getState().setNodeProfileAnchor(imageNodeId, 1, 1, { setPivot: true, snap: true });
+
+    const scene = useEditorStore.getState().document.scenes[0]!;
+    const image = scene.nodes.find((node) => node.id === imageNodeId)!;
+    const world = getNodeWorldMatrix(scene, imageNodeId, "desktop")!;
+    const pivotX = (image.transform.pivotX ?? 0) * image.transform.width;
+    const pivotY = (image.transform.pivotY ?? 0) * image.transform.height;
+    const worldPivot = {
+      x: world.a * pivotX + world.c * pivotY + world.tx,
+      y: world.b * pivotX + world.d * pivotY + world.ty,
+    };
+    expect(worldPivot.x).toBeCloseTo(scene.layout.referenceViewports.desktop.width, 6);
+    expect(worldPivot.y).toBeCloseTo(scene.layout.referenceViewports.desktop.height, 6);
   });
 });
 

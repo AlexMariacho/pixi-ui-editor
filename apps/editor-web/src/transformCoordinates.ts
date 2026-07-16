@@ -1,7 +1,7 @@
-import { resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
+import { resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, UINode } from "@pixi-ui-editor/schema";
 
-export type NodeOwner = { nodes: UINode[] };
+export type NodeOwner = { nodes: UINode[]; layout?: { referenceViewports: Record<LayoutProfileId, LayoutSize> } };
 
 export type AffineTransform = {
   a: number;
@@ -40,6 +40,19 @@ function invert(matrix: AffineTransform): AffineTransform | undefined {
   };
 }
 
+/** Converts a point in scene coordinates into coordinates local to a node's parent. */
+export function worldPointToLocal(
+  parentWorldMatrix: AffineTransform | undefined,
+  point: { x: number; y: number },
+): { x: number; y: number } | undefined {
+  const inverseParent = parentWorldMatrix === undefined ? IDENTITY : invert(parentWorldMatrix);
+  if (inverseParent === undefined) return undefined;
+  return {
+    x: inverseParent.a * point.x + inverseParent.c * point.y + inverseParent.tx,
+    y: inverseParent.b * point.x + inverseParent.d * point.y + inverseParent.ty,
+  };
+}
+
 export function localTransformMatrix(transform: UINode["transform"]): AffineTransform {
   const cosine = Math.cos(transform.rotation);
   const sine = Math.sin(transform.rotation);
@@ -65,18 +78,25 @@ export function getNodeWorldMatrix(owner: NodeOwner, nodeId: string, profile: La
   const nodesById = new Map(owner.nodes.map((node) => [node.id, node]));
   const visiting = new Set<string>();
 
-  const visit = (id: string): AffineTransform | undefined => {
+  const visit = (id: string): { matrix: AffineTransform; size: LayoutSize } | undefined => {
     if (visiting.has(id)) return undefined;
     const node = nodesById.get(id);
     if (node === undefined) return undefined;
     visiting.add(id);
-    const parentMatrix = node.parentId === null ? IDENTITY : visit(node.parentId);
+    const parent = node.parentId === null ? undefined : visit(node.parentId);
     visiting.delete(id);
-    if (parentMatrix === undefined) return undefined;
-    return multiply(parentMatrix, localTransformMatrix(resolveProfileTransform(node, profile).transform));
+    if (node.parentId !== null && parent === undefined) return undefined;
+    const parentSize = parent?.size ?? owner.layout?.referenceViewports[profile];
+    const transform = resolveAnchoredTransform(resolveProfileTransform(node, profile).transform, parentSize);
+    return {
+      matrix: multiply(parent?.matrix ?? IDENTITY, localTransformMatrix(transform)),
+      size: node.parentId === null && owner.layout !== undefined
+        ? owner.layout.referenceViewports[profile]
+        : { width: transform.width, height: transform.height },
+    };
   };
 
-  return visit(nodeId);
+  return visit(nodeId)?.matrix;
 }
 
 function nearlyEqual(left: number, right: number): boolean {

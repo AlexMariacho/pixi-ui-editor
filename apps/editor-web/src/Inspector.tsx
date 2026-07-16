@@ -1,5 +1,6 @@
 import type { ChangeEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { UINode } from "@pixi-ui-editor/schema";
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { getEditingTarget, useEditorStore } from "./store.js";
@@ -111,8 +112,8 @@ const ANCHOR_PRESETS: { x: number; y: number }[] = [
 
 const samePivot = (a: number, b: number) => Math.abs(a - b) < 0.001;
 
-/** 3x3 anchor grid for the common pivot positions (corners, edges, center) used to rotate/scale around a point other than the top-left corner. */
-function AnchorGrid({ pivotX, pivotY, onSelect }: { pivotX: number; pivotY: number; onSelect: (x: number, y: number) => void }) {
+/** 3x3 grid for the common pivot positions used to rotate/scale around a point other than the top-left corner. */
+function PivotGrid({ pivotX, pivotY, onSelect }: { pivotX: number; pivotY: number; onSelect: (x: number, y: number) => void }) {
   return <div className="anchor-grid" role="group" aria-label="Pivot anchor">
     {ANCHOR_PRESETS.map((preset) => {
       const active = samePivot(preset.x, pivotX) && samePivot(preset.y, pivotY);
@@ -136,10 +137,109 @@ const clampFraction = (value: number) => Math.min(1, Math.max(0, value));
 /** Pivot as a normalized 0-1 fraction of width/height; 0,0 is the top-left corner (Pixi's default), 0.5,0.5 is the center. */
 function PivotField({ pivotX, pivotY, onChange }: { pivotX: number; pivotY: number; onChange: (pivotX: number, pivotY: number) => void }) {
   return <>
-    <InspectorField label="Pivot"><AnchorGrid pivotX={pivotX} pivotY={pivotY} onSelect={onChange} /></InspectorField>
+    <InspectorField label="Pivot"><PivotGrid pivotX={pivotX} pivotY={pivotY} onSelect={onChange} /></InspectorField>
     <NumberField label="Pivot X %" value={toPercent(pivotX)} step={1} onChange={(value) => onChange(clampFraction(value / 100), pivotY)} />
     <NumberField label="Pivot Y %" value={toPercent(pivotY)} step={1} onChange={(value) => onChange(pivotX, clampFraction(value / 100))} />
   </>;
+}
+
+function AnchorPresetIcon({ x, y, edgeMode }: { x: number; y: number; edgeMode: boolean }) {
+  const horizontal = x === 0 ? "left" : x === 1 ? "right" : "center";
+  const vertical = y === 0 ? "top" : y === 1 ? "bottom" : "center";
+  const markerKind = !edgeMode
+    ? "point"
+    : horizontal === "center" && vertical === "center"
+      ? "center"
+      : horizontal === "center"
+        ? `side-${vertical}`
+        : vertical === "center"
+          ? `side-${horizontal}`
+          : `corner-${vertical}-${horizontal}`;
+  return <span className={edgeMode ? "anchor-preset-icon anchor-preset-icon-edge" : "anchor-preset-icon"}>
+    <span className="anchor-preset-guide anchor-preset-guide-x" style={{ left: `${x * 100}%` }} />
+    <span className="anchor-preset-guide anchor-preset-guide-y" style={{ top: `${y * 100}%` }} />
+    <span className={`anchor-preset-marker anchor-preset-marker-${markerKind}`} style={{ left: `${x * 100}%`, top: `${y * 100}%` }} />
+  </span>;
+}
+
+/** Unity-like anchor preset popup. Shift couples the object's pivot; Ctrl+Shift also snaps it to the chosen parent point. */
+function AnchorField({ anchorX, anchorY, onSelect }: {
+  anchorX: number;
+  anchorY: number;
+  onSelect: (x: number, y: number, options: { setPivot: boolean; snap: boolean }) => void;
+}) {
+  const [modifiers, setModifiers] = useState({ shift: false, ctrl: false });
+  const [open, setOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState({ left: 0, top: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const update = (event: KeyboardEvent) => setModifiers({ shift: event.shiftKey, ctrl: event.ctrlKey });
+    const reset = () => setModifiers({ shift: false, ctrl: false });
+    window.addEventListener("keydown", update);
+    window.addEventListener("keyup", update);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("keydown", update);
+      window.removeEventListener("keyup", update);
+      window.removeEventListener("blur", reset);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const placePopover = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect === undefined) return;
+      const width = 170;
+      const height = popoverRef.current?.offsetHeight ?? 190;
+      const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
+      const top = rect.top >= height + 8
+        ? rect.top - height - 6
+        : Math.min(window.innerHeight - height - 8, rect.bottom + 6);
+      setPopoverPosition({ left, top: Math.max(8, top) });
+    };
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
+    };
+    placePopover();
+    window.addEventListener("resize", placePopover);
+    document.addEventListener("scroll", placePopover, true);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("resize", placePopover);
+      document.removeEventListener("scroll", placePopover, true);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
+
+  const popover = open ? <div ref={popoverRef} className="anchor-presets-popover" style={popoverPosition}>
+      <div className="anchor-presets-grid" role="group" aria-label="Anchor presets">
+        {ANCHOR_PRESETS.map((preset) => {
+          const active = samePivot(preset.x, anchorX) && samePivot(preset.y, anchorY);
+          return <button
+            key={`${preset.x}-${preset.y}`}
+            type="button"
+            className={active ? "anchor-preset anchor-preset-active" : "anchor-preset"}
+            aria-label={`Anchor ${preset.x * 100}% x ${preset.y * 100}%`}
+            aria-pressed={active}
+            onClick={(event) => onSelect(preset.x, preset.y, { setPivot: event.shiftKey, snap: event.shiftKey && event.ctrlKey })}
+          ><AnchorPresetIcon x={preset.x} y={preset.y} edgeMode={modifiers.shift} /></button>;
+        })}
+      </div>
+      <p className={modifiers.shift && modifiers.ctrl ? "anchor-presets-hint anchor-presets-hint-active" : "anchor-presets-hint"}>
+        {modifiers.shift && modifiers.ctrl ? "Shift + Ctrl: set pivot and snap" : modifiers.shift ? "Shift: set matching pivot" : "Click: preserve position"}
+      </p>
+    </div> : null;
+
+  return <InspectorField label="Anchors"><span className="anchor-presets">
+    <button ref={triggerRef} type="button" className={open ? "anchor-presets-trigger anchor-presets-trigger-open" : "anchor-presets-trigger"} aria-label="Open anchor presets" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <AnchorPresetIcon x={anchorX} y={anchorY} edgeMode={modifiers.shift} />
+    </button>
+    {popover !== null && createPortal(popover, document.body)}
+  </span></InspectorField>;
 }
 
 export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UINode | undefined; readOnly?: boolean }) {
@@ -147,6 +247,7 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
   const assets = useEditorStore((state) => state.document.assets);
   const activeProfile = useEditorStore((state) => state.activeProfile);
   const updateNodeProfileTransform = useEditorStore((state) => state.updateNodeProfileTransform);
+  const setNodeProfileAnchor = useEditorStore((state) => state.setNodeProfileAnchor);
   const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
   const setImageNodeAsset = useEditorStore((state) => state.setImageNodeAsset);
   const updateSpineNodeAnimation = useEditorStore((state) => state.updateSpineNodeAnimation);
@@ -186,6 +287,8 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
 
   const pivotX = resolvedTransform.pivotX ?? 0;
   const pivotY = resolvedTransform.pivotY ?? 0;
+  const anchorX = resolvedTransform.anchorX ?? 0;
+  const anchorY = resolvedTransform.anchorY ?? 0;
 
   return <fieldset className="inspector-content" disabled={readOnly}>
     {readOnly && <p className="inspector-empty">Preset content is read-only. Use Edit in Presets to change it.</p>}
@@ -239,6 +342,7 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
       <NumberField label="Scale X" value={resolvedTransform.scaleX} step={0.1} onChange={(value) => updateTransform({ scaleX: value })} />
       <NumberField label="Scale Y" value={resolvedTransform.scaleY} step={0.1} onChange={(value) => updateTransform({ scaleY: value })} />
       <RotationField radians={resolvedTransform.rotation} onChangeRadians={(value) => updateTransform({ rotation: value })} />
+      <AnchorField anchorX={anchorX} anchorY={anchorY} onSelect={(x, y, options) => setNodeProfileAnchor(selectedNode.id, x, y, options)} />
       <PivotField pivotX={pivotX} pivotY={pivotY} onChange={(x, y) => updateTransform({ pivotX: x, pivotY: y })} />
     </InspectorWindow>
     {selectedNode.type === "text" && <InspectorWindow title="Text">

@@ -24,6 +24,16 @@ describe("schema v1", () => {
     expect(validateProjectDocument(createProjectDocumentFixture())).toEqual({ valid: true, issues: [] });
   });
 
+  it("accepts normalized anchors and rejects values outside the parent rectangle", () => {
+    const document = createProjectDocumentFixture();
+    document.scenes[0]!.nodes[1]!.transform.anchorX = 0.5;
+    document.scenes[0]!.nodes[1]!.transform.anchorY = 1;
+    expect(validateProjectDocument(document).valid).toBe(true);
+
+    document.scenes[0]!.nodes[1]!.transform.anchorX = 1.1;
+    expect(validateProjectDocument(document).issues[0]!.code).toBe("STRUCTURAL_SCHEMA");
+  });
+
   it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => {
     const result = validateFixtureMutation((document) => {
       delete (document.scenes[0]!.layout.referenceViewports as Record<string, unknown>)[profile];

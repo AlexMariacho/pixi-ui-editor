@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { serializeProjectDocument } from "@pixi-ui-editor/schema";
+import { serializeProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Sprite, Texture } from "pixi.js";
 import { TextureAtlas } from "@esotericsoftware/spine-pixi-v8";
-import { assignAtlasPageTextures, buildSceneView, fitSpineToTransform, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveProfileForViewport, resolveProfileTransform } from "./index.js";
+import { assignAtlasPageTextures, buildSceneView, fitSpineToTransform, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveAnchoredTransform, resolveProfileForViewport, resolveProfileTransform } from "./index.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
@@ -39,6 +39,11 @@ describe("sample project loader smoke test", () => {
     expect(resolveProfileTransform(withDesktopOverride, "desktop").visible).toBe(false);
   });
 
+  it("resolves normalized anchors against the parent rectangle", () => {
+    const transform = { x: -160, y: -50, width: 320, height: 100, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0.5, anchorY: 1 };
+    expect(resolveAnchoredTransform(transform, { width: 1920, height: 1080 })).toMatchObject({ x: 800, y: 1030 });
+  });
+
   it("resolves the viewport profile on both sides of the breakpoint and picks mobile exactly on it", () => {
     const settings = { layoutProfileSelection: { mode: "aspect-ratio" as const, mobileMaxAspectRatio: 1 } };
 
@@ -57,12 +62,53 @@ describe("sample project loader smoke test", () => {
   it("uses supplied textures for image nodes and otherwise preserves the placeholder", () => {
     const document = parseProjectDocumentJson(sampleJson);
     const textured = buildSceneView(document, ids.scene, "desktop", new Map([[ids.asset, Texture.WHITE]]));
-    const sprite = textured.nodeViews.get(ids.image);
+    const imageView = textured.nodeViews.get(ids.image)!;
+    const sprite = imageView.children[0];
+    expect(imageView).not.toBeInstanceOf(Sprite);
     expect(sprite).toBeInstanceOf(Sprite);
     expect(sprite?.width).toBe(320);
 
-    const placeholder = buildSceneView(document, ids.scene, "desktop").nodeViews.get(ids.image);
+    const placeholder = buildSceneView(document, ids.scene, "desktop").nodeViews.get(ids.image)?.children[0];
     expect(placeholder).not.toBeInstanceOf(Sprite);
+
+    const anchoredDocument = clone(document);
+    const anchoredNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
+    anchoredNode.transform = { ...anchoredNode.transform, anchorX: 1, pivotX: 1, x: -anchoredNode.transform.width };
+    const anchoredView = buildSceneView(anchoredDocument, ids.scene, "desktop", new Map([[ids.asset, Texture.WHITE]])).nodeViews.get(ids.image)!;
+    const anchoredSprite = anchoredView.children[0] as Sprite;
+    const renderedRight = anchoredView.position.x + (anchoredSprite.width - anchoredView.pivot.x) * anchoredView.scale.x;
+    expect(renderedRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.desktop.width);
+
+    const mobileNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
+    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorX: 1, pivotX: 1, x: -320 };
+    const mobileView = buildSceneView(anchoredDocument, ids.scene, "mobile", new Map([[ids.asset, Texture.WHITE]])).nodeViews.get(ids.image)!;
+    const mobileSprite = mobileView.children[0] as Sprite;
+    const mobileRight = mobileView.position.x + (mobileSprite.width - mobileView.pivot.x) * mobileView.scale.x;
+    expect(mobileRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.mobile.width);
+  });
+
+  it("applies identical layout coordinates to image, text, and Spine node containers", () => {
+    const document = parseProjectDocumentJson(sampleJson);
+    const scene = document.scenes[0]!;
+    const root = scene.nodes.find((node) => node.id === ids.root)!;
+    const image = scene.nodes.find((node) => node.id === ids.image)!;
+    const text = scene.nodes.find((node) => node.id === ids.text)!;
+    const spineId = "10000000-0000-4000-8000-000000000007";
+    const transform = { x: -240, y: -90, width: 320, height: 180, scaleX: 1.25, scaleY: 0.75, rotation: 0.2, anchorX: 1, anchorY: 0.5, pivotX: 0.75, pivotY: 0.5 };
+    image.transform = { ...transform };
+    text.transform = { ...transform };
+    const spine: UINode = { id: spineId, name: "Spine", type: "spine", assetId: ids.asset, parentId: ids.root, children: [], visible: true, transform: { ...transform } };
+    scene.nodes.push(spine);
+    root.children.push(spineId);
+
+    const views = buildSceneView(document, ids.scene, "desktop", new Map([[ids.asset, Texture.WHITE]])).nodeViews;
+    const snapshot = (nodeId: string) => {
+      const view = views.get(nodeId)!;
+      return { position: { x: view.position.x, y: view.position.y }, pivot: { x: view.pivot.x, y: view.pivot.y }, scale: { x: view.scale.x, y: view.scale.y }, rotation: view.rotation };
+    };
+
+    expect(snapshot(ids.text)).toEqual(snapshot(ids.image));
+    expect(snapshot(spineId)).toEqual(snapshot(ids.image));
   });
 
   it("loads the repository fixture through migration and validation", () => {

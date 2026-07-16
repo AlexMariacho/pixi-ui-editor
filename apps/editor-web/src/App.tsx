@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
-import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, getSpineViewPlayback, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type LayoutSize, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
@@ -61,16 +61,23 @@ function selectionBounds(
   node: UINode,
   nodesById: ReadonlyMap<string, UINode>,
   nodeViews: ReadonlyMap<string, Container>,
+  profile: LayoutProfileId,
 ): CanvasBounds | undefined {
   const nodeView = nodeViews.get(node.id);
   if (nodeView === undefined || nodeView.destroyed || !nodeView.visible) return undefined;
 
+  // Text's glyph bounds and Spine's animated bounds are content details. Anchors, pivots and
+  // resize handles operate on the stable width/height layout rectangle for both node types.
+  if (node.type === "text" || node.type === "spine") {
+    const { transform } = resolveProfileTransform(node, profile);
+    return nodeRectBounds(nodeView, transform.width, transform.height);
+  }
   if (node.type !== "container") return displayedBounds(nodeView);
 
   const childBounds = node.children.flatMap((childId) => {
     const child = nodesById.get(childId);
     if (child === undefined) return [];
-    const bounds = selectionBounds(child, nodesById, nodeViews);
+    const bounds = selectionBounds(child, nodesById, nodeViews, profile);
     return bounds === undefined ? [] : [bounds];
   });
   return unionBounds(childBounds) ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE);
@@ -514,6 +521,18 @@ function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMo
   });
 }
 
+function getParentLayoutSize(owner: { nodes: UINode[]; layout?: { referenceViewports: Record<LayoutProfileId, LayoutSize> } }, node: UINode, profile: LayoutProfileId): LayoutSize | undefined {
+  if (node.parentId !== null) {
+    const parent = owner.nodes.find((candidate) => candidate.id === node.parentId);
+    if (parent !== undefined) {
+      if (owner.layout !== undefined && parent.parentId === null) return owner.layout.referenceViewports[profile];
+      const transform = resolveProfileTransform(parent, profile).transform;
+      return { width: transform.width, height: transform.height };
+    }
+  }
+  return owner.layout?.referenceViewports[profile];
+}
+
 function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
@@ -557,6 +576,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       y: number;
       pivotX: number;
       pivotY: number;
+      anchorOffsetX: number;
+      anchorOffsetY: number;
     }[];
   } | null>(null);
   const resizeDragRef = useRef<{
@@ -597,7 +618,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const node = nodesById.get(nodeId);
       const nodeView = nodeViewsRef.current.get(nodeId);
       if (node === undefined || nodeView === undefined) return [];
-      const bounds = selectionBounds(node, nodesById, nodeViewsRef.current);
+      const bounds = selectionBounds(node, nodesById, nodeViewsRef.current, editorState.activeProfile);
       if (bounds === undefined) return [];
       selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
       return [{ node, nodeView, bounds }];
@@ -699,7 +720,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const nodesById = new Map(owner?.nodes.map((node) => [node.id, node]) ?? []);
         const selectedIds = owner?.nodes.flatMap((node) => {
           if (node.id === technicalRootId) return [];
-          const bounds = selectionBounds(node, nodesById, nodeViewsRef.current);
+          const bounds = selectionBounds(node, nodesById, nodeViewsRef.current, state.activeProfile);
           if (bounds === undefined) return [];
           const intersects = bounds.x <= area.x + area.width && bounds.x + bounds.width >= area.x
             && bounds.y <= area.y + area.height && bounds.y + bounds.height >= area.y;
@@ -799,10 +820,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         application.stage.off("pointerup", stopDrag);
         application.stage.off("pointerupoutside", stopDrag);
         // Клик без перемещения не коммитит документ — иначе каждое выделение дергало бы store и подписчиков.
-        // drag.x/y — это view.position (= transform.x + pivot-офсет), поэтому перед коммитом офсет вычитаем.
+        // drag.x/y — это view.position (= anchor + transform + pivot), поэтому перед коммитом layout-офсеты вычитаем.
         const updates = drag.entries.flatMap((entry) => entry.x === entry.startX && entry.y === entry.startY
           ? []
-          : [{ nodeId: entry.nodeId, patch: { x: entry.x - entry.pivotX, y: entry.y - entry.pivotY } }]);
+          : [{ nodeId: entry.nodeId, patch: { x: entry.x - entry.pivotX - entry.anchorOffsetX, y: entry.y - entry.pivotY - entry.anchorOffsetY } }]);
         useEditorStore.getState().updateNodeProfileTransforms(updates);
       };
       const moveDraggedNode = (event: FederatedPointerEvent) => {
@@ -844,6 +865,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
           const parentView = nodeView?.parent;
           if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return [];
           const pointerStart = parentView.toLocal(event.global);
+          const node = nodesById.get(selectedId);
+          if (node === undefined) return [];
+          const transform = resolveProfileTransform(node, state.activeProfile).transform;
+          const parentSize = getParentLayoutSize(owner, node, state.activeProfile);
           return [{
             nodeId: selectedId,
             pointerStartX: pointerStart.x,
@@ -854,6 +879,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
             y: nodeView.position.y,
             pivotX: nodeView.pivot.x,
             pivotY: nodeView.pivot.y,
+            anchorOffsetX: (transform.anchorX ?? 0) * (parentSize?.width ?? 0),
+            anchorOffsetY: (transform.anchorY ?? 0) * (parentSize?.height ?? 0),
           }];
         });
         if (entries.length === 0) return;
@@ -1159,7 +1186,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     for (const node of scene.nodes) {
       const view = nodeViewsRef.current.get(node.id);
       if (view === undefined || view.destroyed) continue;
-      updateNodeView(view, node, activeProfile);
+      updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile));
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);

@@ -30,6 +30,8 @@ export type ResolvedProfileTransform = {
   visible: boolean;
 };
 
+export type LayoutSize = { width: number; height: number };
+
 export type AssetUrlResolver = (asset: Asset) => string | undefined;
 export type FileUrlResolver = (uri: string) => string | undefined;
 
@@ -40,6 +42,16 @@ export function resolveProfileTransform(node: UINode, profile: LayoutProfileId):
   return {
     transform: { ...node.transform, ...override?.transform },
     visible: override?.visible ?? node.visible,
+  };
+}
+
+/** Resolves normalized anchors against the node's parent rectangle. Missing anchors preserve legacy top-left positioning. */
+export function resolveAnchoredTransform(transform: UINode["transform"], parentSize?: LayoutSize): UINode["transform"] {
+  if (parentSize === undefined) return transform;
+  return {
+    ...transform,
+    x: transform.x + (transform.anchorX ?? 0) * parentSize.width,
+    y: transform.y + (transform.anchorY ?? 0) * parentSize.height,
   };
 }
 
@@ -60,49 +72,62 @@ export function fitSpineToTransform(
     : undefined;
 }
 
+const nodeContentViews = new WeakMap<Container, Container>();
+
+/** Every schema node owns the same outer layout container; asset-specific sizing stays inside it. */
 function createNodeView(node: UINode, transform: UINode["transform"], textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): Container {
+  const view = new Container();
+  let content: Container | undefined;
+
   switch (node.type) {
     case "container":
-      return new Container();
+      break;
     case "image": {
       const texture = textures?.get(node.assetId);
       if (texture !== undefined) {
         const sprite = new Sprite(texture);
         sprite.setSize(transform.width, transform.height);
-        return sprite;
+        content = sprite;
+      } else {
+        content = new Graphics()
+          .rect(0, 0, transform.width, transform.height)
+          .fill(0x4a5568)
+          .stroke({ width: 1, color: 0x94a3b8 });
       }
-
-      return new Graphics()
-        .rect(0, 0, transform.width, transform.height)
-        .fill(0x4a5568)
-        .stroke({ width: 1, color: 0x94a3b8 });
+      break;
     }
     case "text":
-      return new Text({
+      content = new Text({
         text: node.text,
         style: { fontFamily: "Arial", fontSize: 24, fill: 0xffffff },
       });
+      break;
     case "spine": {
       const skeletonData = spines?.get(node.assetId);
       if (skeletonData !== undefined) {
         const spine = new Spine(skeletonData);
         if (node.animation !== undefined && skeletonData.findAnimation(node.animation) !== null) spine.state.setAnimation(0, node.animation, node.loop ?? true);
-        const view = new Container();
         const fit = fitSpineToTransform(skeletonData, transform);
         if (fit !== undefined) {
           spine.scale.set(fit.scaleX, fit.scaleY);
           spine.position.set(fit.x, fit.y);
         }
-        view.addChild(spine);
-        return view;
+        content = spine;
+      } else {
+        content = new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
       }
-      return new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+      break;
     }
-    case "prefab-instance": {
-      const view = expandPrefab?.(node.prefabId);
-      return view ?? new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
-    }
+    case "prefab-instance":
+      content = expandPrefab?.(node.prefabId) ?? new Graphics().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+      break;
   }
+
+  if (content !== undefined) {
+    nodeContentViews.set(view, content);
+    view.addChild(content);
+  }
+  return view;
 }
 
 /** Builds a PixiJS display tree for a scene without depending on DOM or editor state. */
@@ -122,27 +147,31 @@ export function buildSceneView(
   const nodeViews = new Map<string, Container>();
 
   // Views раскрытых prefab-определений не регистрируются в nodeViews: инстанс редактируется как единое целое.
-  const buildOwner = (owner: { rootNodeIds: string[]; nodes: UINode[] }, registerViews: boolean, expandingPrefabIds: ReadonlySet<string>): Container => {
+  const buildOwner = (owner: { rootNodeIds: string[]; nodes: UINode[] }, registerViews: boolean, expandingPrefabIds: ReadonlySet<string>, rootSize: LayoutSize): Container => {
     const nodesById = new Map(owner.nodes.map((node) => [node.id, node]));
 
-    const buildNode = (nodeId: string): Container => {
+    const buildNode = (nodeId: string, parentSize: LayoutSize): Container => {
       const node = nodesById.get(nodeId);
 
       if (node === undefined) {
         throw new Error(`Scene '${sceneId}' references missing node '${nodeId}'.`);
       }
 
-      const { transform } = resolveProfileTransform(node, profile);
+      const resolved = resolveProfileTransform(node, profile);
+      const transform = resolveAnchoredTransform(resolved.transform, parentSize);
       const view = createNodeView(node, transform, textures, spines, (prefabId) => {
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
-        return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]));
+        return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
       });
-      updateNodeView(view, node, profile);
+      updateNodeView(view, node, profile, parentSize);
       if (registerViews) nodeViews.set(node.id, view);
 
+      const childSize = owner === scene && node.parentId === null
+        ? rootSize
+        : { width: transform.width, height: transform.height };
       for (const childId of node.children) {
-        view.addChild(buildNode(childId));
+        view.addChild(buildNode(childId, childSize));
       }
 
       return view;
@@ -150,32 +179,31 @@ export function buildSceneView(
 
     const ownerRoot = new Container();
     for (const rootNodeId of owner.rootNodeIds) {
-      ownerRoot.addChild(buildNode(rootNodeId));
+      ownerRoot.addChild(buildNode(rootNodeId, rootSize));
     }
 
     return ownerRoot;
   };
 
-  return { root: buildOwner(scene, true, new Set()), nodeViews };
+  return { root: buildOwner(scene, true, new Set(), scene.layout.referenceViewports[profile]), nodeViews };
 }
 
 /**
  * Applies a node's resolved transform, visibility, and content to an existing display object,
  * so editors can update views in place without rebuilding the scene tree.
  */
-export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId): void {
-  const { transform, visible } = resolveProfileTransform(node, profile);
-  let scaleX = transform.scaleX;
-  let scaleY = transform.scaleY;
+export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize): void {
+  const resolved = resolveProfileTransform(node, profile);
+  const transform = resolveAnchoredTransform(resolved.transform, parentSize);
+  const { visible } = resolved;
+  const content = nodeContentViews.get(view);
 
-  if (node.type === "image" && view instanceof Sprite) {
-    view.setSize(transform.width, transform.height);
-    scaleX = view.scale.x * transform.scaleX;
-    scaleY = view.scale.y * transform.scaleY;
-  } else if (node.type === "image" && view instanceof Graphics) {
-    view.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
-  } else if (node.type === "text" && view instanceof Text) {
-    if (view.text !== node.text) view.text = node.text;
+  if (node.type === "image" && content instanceof Sprite) {
+    content.setSize(transform.width, transform.height);
+  } else if (node.type === "image" && content instanceof Graphics) {
+    content.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
+  } else if (node.type === "text" && content instanceof Text) {
+    if (content.text !== node.text) content.text = node.text;
   } else if (node.type === "spine" || node.type === "prefab-instance") {
     const spine = node.type === "spine" ? findSpineChild(view) : undefined;
     if (spine !== undefined) {
@@ -184,8 +212,8 @@ export function updateNodeView(view: Container, node: UINode, profile: LayoutPro
         spine.scale.set(fit.scaleX, fit.scaleY);
         spine.position.set(fit.x, fit.y);
       }
-    } else if (view instanceof Graphics) {
-      view.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
+    } else if (content instanceof Graphics) {
+      content.clear().rect(0, 0, transform.width, transform.height).fill(0xff00ff);
     }
   }
 
@@ -194,7 +222,7 @@ export function updateNodeView(view: Container, node: UINode, profile: LayoutPro
   view.pivot.set(pivotX, pivotY);
   view.position.set(transform.x + pivotX, transform.y + pivotY);
   view.rotation = transform.rotation;
-  view.scale.set(scaleX, scaleY);
+  view.scale.set(transform.scaleX, transform.scaleY);
   view.visible = visible;
 }
 
@@ -234,7 +262,9 @@ export function createSpineView(skeletonData: SkeletonData, animation?: string, 
 }
 
 function findSpineChild(view: Container): Spine | undefined {
-  return view.children.find((child): child is Spine => child instanceof Spine);
+  const content = nodeContentViews.get(view);
+  if (content instanceof Spine) return content;
+  return view instanceof Spine ? view : view.children.find((child): child is Spine => child instanceof Spine);
 }
 
 /** Reads the current 1-based animation frame for an editor Spine node. */
