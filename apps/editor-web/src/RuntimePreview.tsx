@@ -114,7 +114,8 @@ export function RuntimePreview() {
           loadSceneTextures(currentPayload.document, currentPayload.sceneId, (asset) => asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined, textureCache),
           loadSceneSpines(currentPayload.document, currentPayload.sceneId, resolveFileUrl, spineCache),
         ]);
-        const { root } = buildSceneView(currentPayload.document, currentPayload.sceneId, currentPayload.profile, textures, spines);
+        // Preview — не authoring-поверхность: контролы получают настоящие pointer events.
+        const { root } = buildSceneView(currentPayload.document, currentPayload.sceneId, currentPayload.profile, { interaction: "runtime", textures, spines });
         if (disposed || tokenAtStart !== buildToken) {
           root.destroy({ children: true });
           return;

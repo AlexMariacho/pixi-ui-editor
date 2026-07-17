@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 const Id = Type.String({ format: "uuid" });
 const Name = Type.String({ minLength: 1 });
 export const LayoutProfileIdSchema = Type.Union([Type.Literal("desktop"), Type.Literal("mobile")]);
@@ -19,7 +19,16 @@ const Image = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("image"
 const Text = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("text"), text: Type.String() })]);
 const Spine = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("spine"), assetId: Id, animation: Type.Optional(Type.String({ minLength: 1 })), loop: Type.Optional(Type.Boolean()) })]);
 const PrefabInstance = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("prefab-instance"), prefabId: Id })]);
-export const UINodeSchema = Type.Union([Container, Image, Text, Spine, PrefabInstance]);
+/** Состояния кнопки. `normal` обязателен; остальные при отсутствии используют его изображение. */
+export const BUTTON_STATE_KEYS = ["normal", "hover", "pressed", "disabled"] as const;
+export type ButtonStateKey = (typeof BUTTON_STATE_KEYS)[number];
+/** Discriminated transition: в v0 поддержан только `instant`, чтобы позже добавить bump/slide/fade без неявных полей. */
+const ButtonTransition = Type.Object({ kind: Type.Literal("instant") });
+const ButtonStates = Type.Object({ normalAssetId: Id, hoverAssetId: Type.Optional(Id), pressedAssetId: Type.Optional(Id), disabledAssetId: Type.Optional(Id) });
+const ButtonTransitions = Type.Partial(Type.Object({ normal: ButtonTransition, hover: ButtonTransition, pressed: ButtonTransition, disabled: ButtonTransition }));
+// `enabled` — сериализованное начальное presentation-состояние; runtime setter документ не меняет.
+const Button = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("button"), states: ButtonStates, enabled: Type.Boolean(), transitions: Type.Optional(ButtonTransitions) })]);
+export const UINodeSchema = Type.Union([Container, Image, Text, Spine, Button, PrefabInstance]);
 export type UINode = Static<typeof UINodeSchema>;
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
 export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
@@ -67,6 +76,8 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     node.children.forEach((childId, childIndex) => { const child = nodes.get(childId), childPath = `${nodePath}/children/${childIndex}`; if (!child) add(issues, "MISSING_CHILD_REFERENCE", childPath, `Child '${childId}' does not exist.`); else { const prior = childOwners.get(childId); if (prior && prior !== node.id) add(issues, "MULTIPLE_PARENTS", childPath, `Node '${childId}' belongs to more than one parent.`); childOwners.set(childId, node.id); if (child.parentId !== node.id) add(issues, "HIERARCHY_PARENT_MISMATCH", childPath, `Child '${childId}' does not point back to parent '${node.id}'.`); } });
     if (node.parentId !== null) { const parent = nodes.get(node.parentId); if (parent && !parent.children.includes(node.id)) add(issues, "HIERARCHY_CHILD_MISMATCH", `${nodePath}/parentId`, `Parent '${node.parentId}' does not list node '${node.id}'.`); }
     if (node.type === "image" || node.type === "spine") { const asset = assets.get(node.assetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/assetId`, `Asset '${node.assetId}' does not exist.`); else if (asset.type !== node.type) add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/assetId`, `A ${node.type} node requires a ${node.type} asset.`); }
+    // Путь ошибки сохраняется до конкретного state field, чтобы Inspector мог подсветить нужный picker.
+    if (node.type === "button") BUTTON_STATE_KEYS.forEach((state) => { const field = `${state}AssetId` as const; const assetId = node.states[field]; if (assetId === undefined) return; const asset = assets.get(assetId), path = `${nodePath}/states/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${assetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, `A button '${state}' state requires an image asset.`); });
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
     checkResolvedSizes(node, nodePath, issues);
   });
@@ -112,9 +123,8 @@ function migrateV1ToV2(document: Record<string, unknown>): void {
       }
     }
   }
-  document.schemaVersion = CURRENT_SCHEMA_VERSION;
 }
-export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version === 1) migrateV1ToV2(migrated); assertProjectDocument(migrated); return migrated; }
+export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 добавляет button как новую ветку union и не меняет существующие nodes. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));

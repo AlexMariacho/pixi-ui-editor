@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CURRENT_SCHEMA_VERSION,
   createStableId,
   migrateProjectDocument,
   serializeProjectDocument,
@@ -7,6 +8,7 @@ import {
   type ProjectDocument,
 } from "./index.js";
 import {
+  addButtonNode,
   createProjectDocumentFixture,
   stableId,
   validateFixtureMutation,
@@ -55,10 +57,46 @@ describe("schema v1", () => {
     v1Document.scenes[0]!.nodes[1]!.layoutOverrides = { mobile: { transform: { anchorX: 0.25 } as never } };
 
     const migrated = migrateProjectDocument(document);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.scenes[0]!.nodes[1]!.transform).toMatchObject({ anchorMinX: 0.5, anchorMaxX: 0.5, anchorMinY: 1, anchorMaxY: 1 });
     expect(migrated.scenes[0]!.nodes[1]!.transform).not.toHaveProperty("anchorX");
     expect(migrated.scenes[0]!.nodes[1]!.layoutOverrides?.mobile?.transform).toEqual({ anchorMinX: 0.25, anchorMaxX: 0.25 });
+  });
+
+  it("accepts a button whose four states reference image assets", () => {
+    const document = createProjectDocumentFixture();
+    addButtonNode(document);
+    expect(validateProjectDocument(document)).toEqual({ valid: true, issues: [] });
+  });
+
+  it("reports the offending state field when a button state references a non-image asset", () => {
+    const document = createProjectDocumentFixture();
+    const button = addButtonNode(document);
+    const spineAsset = stableId(30);
+    document.assets.push({
+      id: spineAsset,
+      name: "Hero",
+      type: "spine",
+      files: {
+        skeleton: { name: "hero.json", uri: "assets/hero.json", mediaType: "application/json" },
+        atlas: { name: "hero.atlas", uri: "assets/hero.atlas", mediaType: "text/plain" },
+        textures: [{ name: "hero.png", uri: "assets/hero.png", mediaType: "image/png" }],
+      },
+    });
+    button.states.pressedAssetId = spineAsset;
+
+    const result = validateProjectDocument(document);
+    expect(result.issues).toMatchObject([{ code: "INCOMPATIBLE_ASSET_REFERENCE", path: "/scenes/0/nodes/2/states/pressedAssetId" }]);
+  });
+
+  it("migrates a v2 document to v3 without changing its existing nodes", () => {
+    const document = createProjectDocumentFixture();
+    const v2Nodes = structuredClone(document.scenes[0]!.nodes);
+    (document as { schemaVersion: number }).schemaVersion = 2;
+
+    const migrated = migrateProjectDocument(document);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.scenes[0]!.nodes).toEqual(v2Nodes);
   });
 
   it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => {

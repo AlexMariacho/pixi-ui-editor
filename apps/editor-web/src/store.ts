@@ -5,6 +5,7 @@ import {
   validateProjectDocument,
   type LayoutProfileId,
   type AssetFile,
+  type ButtonStateKey,
   type PrefabDefinition,
   type ProjectDocument,
   type Scene,
@@ -18,6 +19,7 @@ import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
+export type AddableNodeType = "container" | "image" | "text" | "spine" | "button";
 
 export type EditorState = {
   document: ProjectDocument;
@@ -31,6 +33,8 @@ export type EditorState = {
   spineFrameRequests: Record<string, number>;
   spinePlaybackFrames: Record<string, { current: number; total: number }>;
   spineAutoplay: Record<string, boolean>;
+  /** Transient authoring aid: shows one button state on the canvas. Never serialized. */
+  buttonPreviewStates: Record<string, ButtonStateKey>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -57,7 +61,10 @@ export type EditorState = {
   requestSpineFrame(nodeId: string, frame: number): void;
   setSpineAutoplay(nodeId: string, autoplay: boolean): void;
   reportSpinePlaybackFrame(nodeId: string, playback: { current: number; total: number }): void;
-  addNode(type: "container" | "image" | "text" | "spine"): void;
+  setButtonStateAsset(nodeId: string, state: ButtonStateKey, assetId: string | undefined): void;
+  setButtonEnabled(nodeId: string, enabled: boolean): void;
+  previewButtonState(nodeId: string, state: ButtonStateKey): void;
+  addNode(type: AddableNodeType): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
   moveNode(nodeId: string, placement: { parentId: string | null; index: number }): void;
   deleteNode(nodeId: string): void;
@@ -247,6 +254,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   spineFrameRequests: {},
   spinePlaybackFrames: {},
   spineAutoplay: {},
+  buttonPreviewStates: {},
   setActiveProfile: (profile) => set({ activeProfile: profile }),
   setActiveTool: (tool) => set({ activeTool: tool }),
   setViewMode: (mode) => set((state) => {
@@ -576,6 +584,30 @@ export const useEditorStore = create<EditorState>((set) => ({
     node.loop = loop;
     return commitCandidate(state, candidate, "Spine loop update was rejected because it makes the project document invalid.");
   }),
+  setButtonStateAsset: (nodeId, buttonState, assetId) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (node?.type !== "button") {
+      console.warn(`Cannot set the '${buttonState}' asset for node '${nodeId}': it is not a button node.`);
+      return state;
+    }
+    const field = `${buttonState}AssetId` as const;
+    // Only normal is required; clearing an optional state falls back to the normal image at runtime.
+    if (assetId === undefined && field !== "normalAssetId") delete node.states[field];
+    else if (assetId !== undefined) node.states[field] = assetId;
+    return commitCandidate(state, candidate, "The button state asset selection was rejected because it makes the project document invalid.");
+  }),
+  setButtonEnabled: (nodeId, enabled) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((candidateNode) => candidateNode.id === nodeId);
+    if (node?.type !== "button") {
+      console.warn(`Cannot set enabled for node '${nodeId}': it is not a button node.`);
+      return state;
+    }
+    node.enabled = enabled;
+    return commitCandidate(state, candidate, "The button enabled update was rejected because it makes the project document invalid.");
+  }),
+  previewButtonState: (nodeId, buttonState) => set((state) => ({ buttonPreviewStates: { ...state.buttonPreviewStates, [nodeId]: buttonState } })),
   requestSpineFrame: (nodeId, frame) => set((state) => ({ spineFrameRequests: { ...state.spineFrameRequests, [nodeId]: frame } })),
   setSpineAutoplay: (nodeId, autoplay) => set((state) => ({ spineAutoplay: { ...state.spineAutoplay, [nodeId]: autoplay } })),
   reportSpinePlaybackFrame: (nodeId, playback) => set((state) => {
@@ -628,6 +660,14 @@ export const useEditorStore = create<EditorState>((set) => ({
         return state;
       }
       node = { ...base, type, assetId: asset.id };
+    } else if (type === "button") {
+      // Только normal обязателен: остальные состояния пользователь назначает в Inspector.
+      const asset = candidate.assets.find((candidateAsset) => candidateAsset.type === "image");
+      if (asset === undefined) {
+        console.warn("Cannot add a button node: the project document does not contain an image asset.");
+        return state;
+      }
+      node = { ...base, type, states: { normalAssetId: asset.id }, enabled: true };
     } else if (type === "text") {
       node = { ...base, type, text: "New text" };
     } else {

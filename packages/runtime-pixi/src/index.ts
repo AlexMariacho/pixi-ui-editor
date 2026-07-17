@@ -1,7 +1,17 @@
-import { migrateProjectDocument, type Asset, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
-import { Container, Graphics, Sprite, Text, Texture, type Ticker } from "pixi.js";
+import { BUTTON_STATE_KEYS, migrateProjectDocument, type Asset, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
+import { Container, Graphics, Rectangle, Sprite, Text, Texture, type PointData, type Ticker } from "pixi.js";
+import { FancyButton } from "@pixi/ui";
 import { AtlasAttachmentLoader, SkeletonJson, Spine, SpineTexture, TextureAtlas, type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 export type { SkeletonData } from "@esotericsoftware/spine-pixi-v8";
+
+/**
+ * Whether a built scene is an inert authoring surface or a live one.
+ * The editor canvas builds `authoring` scenes so controls never swallow selection and drag
+ * gestures; Preview and the consuming app build `runtime` scenes with real pointer handling.
+ */
+export type SceneInteractionMode = "authoring" | "runtime";
+
+type ButtonNode = Extract<UINode, { type: "button" }>;
 
 export class ProjectDocumentJsonParseError extends Error {
   readonly code = "INVALID_JSON";
@@ -90,6 +100,25 @@ export function fitSpineToTransform(
  */
 export abstract class NodeView extends Container {
   protected content?: Container;
+  /** Node's own grab rectangle in local space, kept equal to its resolved layout rectangle. */
+  private readonly grabRect = new Rectangle();
+
+  /**
+   * Makes every node selectable and draggable by its layout rectangle, whatever it renders.
+   *
+   * Lives here rather than in a subclass because a bare `Container` has no `containsPoint` of its
+   * own: without this, Pixi could only find a node through whatever content the subclass happens to
+   * draw, so nodes that draw nothing (container) or keep their content out of hit testing (button,
+   * whose `@pixi/ui` view is inert while authoring) would silently stop being selectable.
+   *
+   * Deliberately `containsPoint` and NOT `hitArea`: Pixi's `hitPruneFn` drops a container together
+   * with its whole subtree once the point falls outside its `hitArea`, which would make any child
+   * reaching past its parent's rectangle visible but unclickable. `containsPoint` never clips
+   * children — they are hit-tested first and independently, so a child always stays grabbable.
+   */
+  containsPoint(point: PointData): boolean {
+    return this.grabRect.contains(point.x, point.y);
+  }
 
   protected setContent(content: Container): void {
     this.content = content;
@@ -111,6 +140,11 @@ export abstract class NodeView extends Container {
     this.rotation = transform.rotation;
     this.scale.set(transform.scaleX, transform.scaleY);
     this.visible = resolved.visible;
+    // Тот же прямоугольник, что видит пользователь: grab-зона не зависит от содержимого ноды.
+    this.grabRect.x = 0;
+    this.grabRect.y = 0;
+    this.grabRect.width = transform.width;
+    this.grabRect.height = transform.height;
   }
 
   getSpine(): Spine | undefined {
@@ -170,6 +204,85 @@ class SpineNodeView extends NodeView {
   }
 }
 
+const FANCY_STATE_BY_KEY = { normal: "default", hover: "hover", pressed: "pressed", disabled: "disabled" } as const;
+const KEY_BY_FANCY_STATE = { default: "normal", hover: "hover", pressed: "pressed", disabled: "disabled" } as const;
+
+/**
+ * Adapts a button node to `@pixi/ui`'s `FancyButton`, which owns the pointer state machine —
+ * this class never reimplements it. Optional states fall back to the normal image, and runtime
+ * changes to `enabled` or the current state stay in the view: they never touch the document.
+ */
+export class ButtonNodeView extends NodeView {
+  private readonly button: FancyButton;
+  private readonly stateViews: Container[] = [];
+  private readonly interaction: SceneInteractionMode;
+  private enabledState: boolean;
+
+  constructor(node: ButtonNode, textures: ReadonlyMap<string, Texture> | undefined, interaction: SceneInteractionMode) {
+    super();
+    this.interaction = interaction;
+    const normalTexture = textures?.get(node.states.normalAssetId);
+    const viewFor = (assetId: string | undefined): Container => {
+      const texture = (assetId === undefined ? undefined : textures?.get(assetId)) ?? normalTexture;
+      const view = texture === undefined ? new Graphics() : new Sprite(texture);
+      this.stateViews.push(view);
+      return view;
+    };
+
+    this.button = new FancyButton({
+      defaultView: viewFor(node.states.normalAssetId),
+      hoverView: viewFor(node.states.hoverAssetId),
+      pressedView: viewFor(node.states.pressedAssetId),
+      disabledView: viewFor(node.states.disabledAssetId),
+    });
+    // Authoring-сцена инертна: FancyButton уже включил себе eventMode "static", снимаем его до applyEnabled.
+    // Выделение и drag при этом не страдают: попадание ловит hitArea базового NodeView, а не это поддерево.
+    if (interaction === "authoring") this.button.eventMode = "none";
+    this.enabledState = node.enabled;
+    this.applyEnabled(node.enabled);
+    this.setContent(this.button);
+  }
+
+  /** In authoring mode `enabled` may only drive the visuals: `FancyButton` couples it to `eventMode`. */
+  private applyEnabled(enabled: boolean): void {
+    this.enabledState = enabled;
+    if (this.interaction === "runtime") this.button.enabled = enabled;
+    else this.button.setState(enabled ? "default" : "disabled");
+  }
+
+  protected syncContent(node: UINode, transform: UINode["transform"]): void {
+    for (const view of this.stateViews) {
+      if (view instanceof Sprite) view.setSize(transform.width, transform.height);
+      else if (view instanceof Graphics) view.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
+    }
+    // Только на изменение документа: иначе любой пересчёт layout сбрасывал бы transient preview state.
+    if (node.type === "button" && node.enabled !== this.enabledState) this.applyEnabled(node.enabled);
+  }
+
+  get enabled(): boolean {
+    return this.enabledState;
+  }
+
+  set enabled(value: boolean) {
+    this.applyEnabled(value);
+  }
+
+  get state(): ButtonStateKey {
+    return KEY_BY_FANCY_STATE[this.button.state];
+  }
+
+  /** Forces a visual state without changing `enabled`, so a disabled button still emits no press. */
+  setState(state: ButtonStateKey): void {
+    this.button.setState(FANCY_STATE_BY_KEY[state]);
+  }
+
+  get onPress(): FancyButton["onPress"] { return this.button.onPress; }
+  get onDown(): FancyButton["onDown"] { return this.button.onDown; }
+  get onUp(): FancyButton["onUp"] { return this.button.onUp; }
+  get onHover(): FancyButton["onHover"] { return this.button.onHover; }
+  get onOut(): FancyButton["onOut"] { return this.button.onOut; }
+}
+
 class PrefabInstanceNodeView extends NodeView {
   constructor(expanded: Container | undefined) {
     super();
@@ -181,7 +294,7 @@ class PrefabInstanceNodeView extends NodeView {
   }
 }
 
-function createNodeView(node: UINode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): NodeView {
+function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): NodeView {
   switch (node.type) {
     case "container":
       return new ContainerNodeView();
@@ -191,19 +304,28 @@ function createNodeView(node: UINode, textures?: ReadonlyMap<string, Texture>, s
       return new TextNodeView(node.text);
     case "spine":
       return new SpineNodeView(spines?.get(node.assetId), node.animation, node.loop ?? true);
+    case "button":
+      return new ButtonNodeView(node, textures, interaction);
     case "prefab-instance":
       return new PrefabInstanceNodeView(expandPrefab?.(node.prefabId));
   }
 }
+
+export type BuildSceneViewOptions = {
+  /** Explicit: an editor canvas must pass "authoring", Preview and the consuming app "runtime". */
+  interaction: SceneInteractionMode;
+  textures?: ReadonlyMap<string, Texture>;
+  spines?: ReadonlyMap<string, SkeletonData>;
+};
 
 /** Builds a PixiJS display tree for a scene without depending on DOM or editor state. */
 export function buildSceneView(
   document: ProjectDocument,
   sceneId: string,
   profile: LayoutProfileId,
-  textures?: ReadonlyMap<string, Texture>,
-  spines?: ReadonlyMap<string, SkeletonData>,
+  options: BuildSceneViewOptions,
 ): { root: Container; nodeViews: Map<string, Container> } {
+  const { interaction, textures, spines } = options;
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
 
   if (scene === undefined) {
@@ -225,7 +347,7 @@ export function buildSceneView(
 
       const resolved = resolveProfileTransform(node, profile);
       const transform = resolveAnchoredTransform(resolved.transform, parentSize);
-      const view = createNodeView(node, textures, spines, (prefabId) => {
+      const view = createNodeView(node, interaction, textures, spines, (prefabId) => {
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
@@ -281,6 +403,19 @@ function collectRenderedNodes(document: ProjectDocument, scene: Scene): UINode[]
   return nodes;
 }
 
+/**
+ * Every asset a node references: the image, the Spine data, or each of a button's state images.
+ * Single source of truth for "which assets does this node use" — texture loading and the editor's
+ * usage count both read it, so a new node type can never silently drop out of one of them.
+ */
+export function collectNodeAssetIds(node: UINode): string[] {
+  if (node.type === "image" || node.type === "spine") return [node.assetId];
+  if (node.type !== "button") return [];
+  return BUTTON_STATE_KEYS
+    .map((state) => node.states[`${state}AssetId`])
+    .filter((assetId): assetId is string => assetId !== undefined);
+}
+
 /** Assigns atlas pages by their exported image filename, never by their array index. */
 export function assignAtlasPageTextures(atlas: TextureAtlas, textures: ReadonlyMap<string, Texture>): void {
   for (const page of atlas.pages) {
@@ -326,6 +461,11 @@ export function setSpineViewFrame(view: Container, frame: number, skeletonData: 
   spine?.update(0);
 }
 
+/** Forces an editor-only button state; the node's serialized `enabled` and states stay untouched. */
+export function setButtonViewState(view: Container, state: ButtonStateKey): void {
+  if (view instanceof ButtonNodeView) view.setState(state);
+}
+
 /** Enables or pauses editor-only automatic playback without affecting serialized node data. */
 export function setSpineViewAutoplay(view: Container, autoplay: boolean): void {
   const spine = findSpineChild(view);
@@ -354,20 +494,23 @@ export async function loadSceneTextures(
   const textures = new Map<string, Texture>();
 
   for (const node of collectRenderedNodes(document, scene)) {
-    if (node.type !== "image" || textures.has(node.assetId)) continue;
+    for (const assetId of collectNodeAssetIds(node)) {
+      if (textures.has(assetId)) continue;
 
-    const asset = assetsById.get(node.assetId);
-    if (asset?.type !== "image") continue;
+      // Spine-ассеты сюда тоже попадают и отсеиваются здесь: их данные грузит loadSceneSpines.
+      const asset = assetsById.get(assetId);
+      if (asset?.type !== "image") continue;
 
-    const url = resolveAssetUrl(asset);
-    if (url === undefined) continue;
+      const url = resolveAssetUrl(asset);
+      if (url === undefined) continue;
 
-    try {
-      const texture = cache.get(asset.source.uri) ?? await loadTexture(url);
-      cache.set(asset.source.uri, texture);
-      textures.set(asset.id, texture);
-    } catch (error) {
-      console.warn(`Unable to load texture for asset '${asset.id}'.`, error);
+      try {
+        const texture = cache.get(asset.source.uri) ?? await loadTexture(url);
+        cache.set(asset.source.uri, texture);
+        textures.set(asset.id, texture);
+      } catch (error) {
+        console.warn(`Unable to load texture for asset '${asset.id}'.`, error);
+      }
     }
   }
 
@@ -404,12 +547,13 @@ export async function loadSceneView(
   sceneId: string,
   profile: LayoutProfileId,
   resolveFileUrl: FileUrlResolver,
+  options: { interaction: SceneInteractionMode },
 ): Promise<{ root: Container; nodeViews: Map<string, Container> }> {
   const [textures, spines] = await Promise.all([
     loadSceneTextures(document, sceneId, (asset) => (asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined)),
     loadSceneSpines(document, sceneId, resolveFileUrl),
   ]);
-  return buildSceneView(document, sceneId, profile, textures, spines);
+  return buildSceneView(document, sceneId, profile, { interaction: options.interaction, textures, spines });
 }
 
 /** Loads one Spine asset, sharing parsed SkeletonData by skeleton file URI. */

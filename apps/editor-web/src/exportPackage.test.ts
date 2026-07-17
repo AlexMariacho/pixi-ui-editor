@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseProjectDocumentJson } from "@pixi-ui-editor/runtime-pixi";
-import { serializeProjectDocument, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
+import { CURRENT_SCHEMA_VERSION, serializeProjectDocument, validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { strFromU8, unzipSync } from "fflate";
 import { buildExportEntries, buildProjectPackageBlob } from "./exportPackage.js";
 
@@ -8,7 +8,7 @@ const imageAssetId = "20000000-0000-4000-8000-000000000001";
 const spineAssetId = "20000000-0000-4000-8000-000000000002";
 
 const sourceDocument: ProjectDocument = {
-  schemaVersion: 2,
+  schemaVersion: CURRENT_SCHEMA_VERSION,
   project: { id: "20000000-0000-4000-8000-000000000000", name: "Export Fixture" },
   settings: { layoutProfileSelection: { mode: "aspect-ratio", mobileMaxAspectRatio: 1 } },
   assets: [

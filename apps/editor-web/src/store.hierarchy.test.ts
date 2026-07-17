@@ -18,6 +18,19 @@ describe("addNode", () => {
     expect(scene.nodes.find((node) => node.id === rootNodeId)?.children).toContain(addedNode?.id);
     expect(validateProjectDocument(document).valid).toBe(true);
   });
+
+  it("creates a button with only its required normal state assigned", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    const imageAssetId = initialDocument.assets.find((asset) => asset.type === "image")!.id;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("button");
+
+    const document = useEditorStore.getState().document;
+    const addedNode = document.scenes[0]!.nodes.at(-1)!;
+
+    expect(addedNode).toMatchObject({ type: "button", parentId: rootNodeId, enabled: true, states: { normalAssetId: imageAssetId } });
+    expect(validateProjectDocument(document).valid).toBe(true);
+  });
 });
 
 describe("deleteNode", () => {

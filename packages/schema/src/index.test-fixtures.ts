@@ -1,9 +1,39 @@
 import {
+  BUTTON_STATE_KEYS,
   CURRENT_SCHEMA_VERSION,
   validateProjectDocument,
   type ProjectDocument,
+  type UINode,
   type ValidationResult,
 } from "./index.js";
+
+export type ButtonNode = Extract<UINode, { type: "button" }>;
+
+/** Appends a button whose four states each reference their own image asset, wired into the fixture's scene root. */
+export function addButtonNode(document: ProjectDocument): ButtonNode {
+  const scene = document.scenes[0]!;
+  const root = scene.nodes[0]!;
+  const assetIds = BUTTON_STATE_KEYS.map((state, index) => {
+    const id = stableId(10 + index);
+    document.assets.push({ id, name: `Button ${state}`, type: "image", source: { uri: `assets/button-${state}.png`, mediaType: "image/png" } });
+    return id;
+  });
+
+  const button: ButtonNode = {
+    id: stableId(20),
+    name: "Play",
+    type: "button",
+    parentId: root.id,
+    children: [],
+    visible: true,
+    enabled: true,
+    states: { normalAssetId: assetIds[0]!, hoverAssetId: assetIds[1]!, pressedAssetId: assetIds[2]!, disabledAssetId: assetIds[3]! },
+    transform: { x: 0, y: 0, width: 120, height: 40, scaleX: 1, scaleY: 1, rotation: 0 },
+  };
+  root.children.push(button.id);
+  scene.nodes.push(button);
+  return button;
+}
 
 export const stableId = (value: number): string =>
   `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;

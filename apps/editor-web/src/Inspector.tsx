@@ -1,7 +1,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { UINode } from "@pixi-ui-editor/schema";
+import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { getEditingTarget, useEditorStore, type AnchorRect } from "./store.js";
 import { loadEditorSceneSpines } from "./assets.js";
@@ -260,6 +260,14 @@ function AnchorField({ anchor, onSelect }: {
   </span></InspectorField>;
 }
 
+/** Пользовательское «Clicked» — это удержание pointer down; в schema/runtime оно называется pressed. */
+const BUTTON_STATE_LABELS: Record<ButtonStateKey, string> = {
+  normal: "Normal",
+  hover: "Hover",
+  pressed: "Clicked (Pressed)",
+  disabled: "Disabled",
+};
+
 export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UINode | undefined; readOnly?: boolean }) {
   const updateNode = useEditorStore((state) => state.updateNode);
   const assets = useEditorStore((state) => state.document.assets);
@@ -268,6 +276,10 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
   const setNodeProfileAnchor = useEditorStore((state) => state.setNodeProfileAnchor);
   const setNodeOrientationVisibility = useEditorStore((state) => state.setNodeOrientationVisibility);
   const setImageNodeAsset = useEditorStore((state) => state.setImageNodeAsset);
+  const setButtonStateAsset = useEditorStore((state) => state.setButtonStateAsset);
+  const setButtonEnabled = useEditorStore((state) => state.setButtonEnabled);
+  const previewButtonState = useEditorStore((state) => state.previewButtonState);
+  const buttonPreviewState = useEditorStore((state) => selectedNode?.type === "button" ? state.buttonPreviewStates[selectedNode.id] ?? "normal" : "normal");
   const updateSpineNodeAnimation = useEditorStore((state) => state.updateSpineNodeAnimation);
   const updateSpineNodeLoop = useEditorStore((state) => state.updateSpineNodeLoop);
   const requestSpineFrame = useEditorStore((state) => state.requestSpineFrame);
@@ -328,6 +340,28 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
       <InspectorField label="Asset">
         <select value={selectedNode.assetId} onChange={(event) => setImageNodeAsset(selectedNode.id, event.target.value)}>
           {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+        </select>
+      </InspectorField>
+    </InspectorWindow>}
+    {selectedNode.type === "button" && <InspectorWindow title="Button">
+      {BUTTON_STATE_KEYS.map((state) => {
+        const assetId = selectedNode.states[`${state}AssetId`];
+        return <InspectorField key={state} label={BUTTON_STATE_LABELS[state]}>
+          <select
+            value={assetId ?? ""}
+            onChange={(event) => setButtonStateAsset(selectedNode.id, state, event.target.value || undefined)}
+          >
+            {/* Normal обязателен; остальные состояния при пустом значении берут его изображение. */}
+            {state !== "normal" && <option value="">(use Normal)</option>}
+            {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+          </select>
+        </InspectorField>;
+      })}
+      <InspectorField label="Enabled"><input type="checkbox" checked={selectedNode.enabled} onChange={(event) => setButtonEnabled(selectedNode.id, event.target.checked)} /></InspectorField>
+      {/* Transient: показывает состояние на canvas, но не сериализуется и не влияет на Preview. */}
+      <InspectorField label="Preview state">
+        <select value={buttonPreviewState} onChange={(event) => previewButtonState(selectedNode.id, event.target.value as ButtonStateKey)}>
+          {BUTTON_STATE_KEYS.map((state) => <option key={state} value={state}>{BUTTON_STATE_LABELS[state]}</option>)}
         </select>
       </InspectorField>
     </InspectorWindow>}

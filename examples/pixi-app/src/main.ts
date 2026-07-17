@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   const rebuildScene = async () => {
     const token = ++buildToken;
-    const { root } = await loadSceneView(packageDocument, scene.id, profile, resolvePackageFileUrl);
+    const { root } = await loadSceneView(packageDocument, scene.id, profile, resolvePackageFileUrl, { interaction: "runtime" });
     if (token !== buildToken) {
       root.destroy({ children: true });
       return;

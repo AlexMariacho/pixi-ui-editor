@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
-import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type LayoutSize, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import type { LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
+import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type LayoutSize, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
-import { getEditingTarget, getSceneRoot, useEditorStore, type EditorTool, type ViewMode } from "./store.js";
+import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "./store.js";
 import { Inspector } from "./Inspector.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures, resolveFileUrl } from "./assets.js";
 import { downloadProjectPackage } from "./exportPackage.js";
@@ -557,7 +557,7 @@ function getParentLayoutSize(owner: { nodes: UINode[]; layout?: { referenceViewp
   return owner.layout?.referenceViewports[profile];
 }
 
-function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
+function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, buttonPreviewState, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
@@ -568,9 +568,10 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
   editingPrefabName: string | null;
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
+  buttonPreviewState: ButtonStateKey | undefined;
   deleteDisabled: boolean;
   setActiveProfile: (profile: LayoutProfileId) => void;
-  addNode: (type: "container" | "image" | "text" | "spine") => void;
+  addNode: (type: AddableNodeType) => void;
   addNodeFromAsset: (assetId: string, position: { x: number; y: number }) => void;
   addPrefabInstance: (prefabId: string, position: { x: number; y: number }) => void;
   finishEditingPrefab: () => void;
@@ -1110,7 +1111,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         const mapRoot = new Container();
         placements.forEach((placement, index) => {
           const [textures, spines] = loadedScenes[index]!;
-          const { root } = buildSceneView(effectDocument, placement.scene.id, activeProfile, textures, spines);
+          const { root } = buildSceneView(effectDocument, placement.scene.id, activeProfile, { interaction: "authoring", textures, spines });
           root.position.x = placement.x;
           root.eventMode = "none";
 
@@ -1180,7 +1181,8 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       const buildDocument = documentRef.current;
       const builtScene = buildDocument.scenes.find((candidate) => candidate.id === sceneId);
       if (builtScene === undefined) return;
-      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, textures, spines);
+      // Editor canvas — authoring-поверхность: контролы не перехватывают selection и drag.
+      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, { interaction: "authoring", textures, spines });
       const technicalRootNodeId = editingPrefabName === null ? getSceneRoot(builtScene)?.id : undefined;
       for (const [nodeId, nodeView] of nodeViews) {
         if (nodeId === technicalRootNodeId) {
@@ -1209,6 +1211,13 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
       world.addChild(root);
       const playbackState = useEditorStore.getState();
       for (const node of builtScene.nodes) {
+        if (node.type === "button") {
+          // Пересборка сцены создаёт новые views, поэтому transient preview state применяем заново.
+          const buttonView = nodeViews.get(node.id);
+          const previewState = playbackState.buttonPreviewStates[node.id];
+          if (buttonView !== undefined && previewState !== undefined) setButtonViewState(buttonView, previewState);
+          continue;
+        }
         if (node.type !== "spine") continue;
         const view = nodeViews.get(node.id);
         if (view !== undefined) setSpineViewAutoplay(view, playbackState.spineAutoplay[node.id] ?? true);
@@ -1255,6 +1264,12 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);
+
+  useEffect(() => {
+    if (buttonPreviewState === undefined || selectedNodeId === null) return;
+    const view = nodeViewsRef.current.get(selectedNodeId);
+    if (view !== undefined) setButtonViewState(view, buttonPreviewState);
+  }, [application, buttonPreviewState, selectedNodeId]);
 
   useEffect(() => {
     if (spineFrameRequest === undefined || selectedNodeId === null) return;
@@ -1323,6 +1338,7 @@ function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, s
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
+        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("button")}>+ Button</button>
         <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={commandTitle(EDITOR_COMMAND_IDS.deleteNode)} onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.deleteNode)}>Delete</button>
       </div>
       {editingPrefabName !== null && <div className="preset-editing-status">
@@ -1390,6 +1406,7 @@ export function App() {
   const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
   const selectedNodeIds = useEditorStore((state) => state.selectedNodeIds);
   const spineFrameRequest = useEditorStore((state) => selectedNodeId === null ? undefined : state.spineFrameRequests[selectedNodeId]);
+  const buttonPreviewState = useEditorStore((state) => selectedNodeId === null ? undefined : state.buttonPreviewStates[selectedNodeId]);
   const spineAutoplay = useEditorStore((state) => selectedNodeId === null ? true : state.spineAutoplay[selectedNodeId] ?? true);
   const addNode = useEditorStore((state) => state.addNode);
   const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
@@ -1467,7 +1484,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} buttonPreviewState={buttonPreviewState} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
   );
