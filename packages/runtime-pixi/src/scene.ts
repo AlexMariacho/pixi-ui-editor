@@ -3,6 +3,7 @@ import { type LayoutProfileId, type ProjectDocument, type Scene, type UINode } f
 import { Container, Texture } from "pixi.js";
 import { loadSceneSpines } from "./assets/spine.js";
 import { loadSceneTextures, type FileUrlResolver } from "./assets/textures.js";
+import { loadSceneFonts } from "./assets/fonts.js";
 import { resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "./layout.js";
 import { NodeView, type SceneInteractionMode } from "./views/NodeView.js";
 import { createNodeView } from "./views/createNodeView.js";
@@ -12,6 +13,7 @@ export type BuildSceneViewOptions = {
   interaction: SceneInteractionMode;
   textures?: ReadonlyMap<string, Texture>;
   spines?: ReadonlyMap<string, SkeletonData>;
+  fonts?: ReadonlyMap<string, string>;
 };
 
 /** Builds a PixiJS display tree for a scene without depending on DOM or editor state. */
@@ -21,7 +23,7 @@ export function buildSceneView(
   profile: LayoutProfileId,
   options: BuildSceneViewOptions,
 ): { root: Container; nodeViews: Map<string, Container> } {
-  const { interaction, textures, spines } = options;
+  const { interaction, textures, spines, fonts } = options;
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
 
   if (scene === undefined) {
@@ -47,7 +49,7 @@ export function buildSceneView(
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
-      });
+      }, fonts);
       view.update(node, profile, parentSize);
       if (registerViews) nodeViews.set(node.id, view);
 
@@ -107,9 +109,10 @@ export async function loadSceneView(
   resolveFileUrl: FileUrlResolver,
   options: { interaction: SceneInteractionMode },
 ): Promise<{ root: Container; nodeViews: Map<string, Container> }> {
-  const [textures, spines] = await Promise.all([
+  const [textures, spines, fonts] = await Promise.all([
     loadSceneTextures(document, sceneId, (asset) => (asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined)),
     loadSceneSpines(document, sceneId, resolveFileUrl),
+    loadSceneFonts(document, sceneId, resolveFileUrl),
   ]);
-  return buildSceneView(document, sceneId, profile, { interaction: options.interaction, textures, spines });
+  return buildSceneView(document, sceneId, profile, { interaction: options.interaction, textures, spines, fonts });
 }

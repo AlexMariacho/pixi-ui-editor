@@ -3,7 +3,7 @@ import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineView
 import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
-import { loadEditorImageAssetSize, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
+import { loadEditorImageAssetSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
@@ -69,6 +69,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
   const texturesRef = useRef<Map<string, Texture>>(new Map());
+  const fontsRef = useRef<Map<string, string>>(new Map());
   const spineDataRef = useRef<Map<string, SkeletonData>>(new Map());
   const spinePlaybackTickerRef = useRef<(() => void) | null>(null);
   const selectionGraphicsRef = useRef<Graphics | null>(null);
@@ -593,13 +594,14 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       void Promise.all(placements.map((placement) => Promise.all([
         loadEditorSceneTextures(effectDocument, placement.scene.id),
         loadEditorSceneSpines(effectDocument, placement.scene.id),
+        loadEditorSceneFonts(effectDocument, placement.scene.id),
       ]))).then((loadedScenes) => {
         if (cancelled) return;
 
         const mapRoot = new Container();
         placements.forEach((placement, index) => {
-          const [textures, spines] = loadedScenes[index]!;
-          const { root } = buildSceneView(effectDocument, placement.scene.id, activeProfile, { interaction: "authoring", textures, spines });
+          const [textures, spines, fonts] = loadedScenes[index]!;
+          const { root } = buildSceneView(effectDocument, placement.scene.id, activeProfile, { interaction: "authoring", textures, spines, fonts });
           root.position.x = placement.x;
           root.eventMode = "none";
 
@@ -662,7 +664,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     const artboard = artboardRef.current?.clear();
     if (editingPrefabName === null) artboard?.rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
 
-    void Promise.all([loadEditorSceneTextures(effectDocument, sceneId), loadEditorSceneSpines(effectDocument, sceneId)]).then(([textures, spines]) => {
+    void Promise.all([loadEditorSceneTextures(effectDocument, sceneId), loadEditorSceneSpines(effectDocument, sceneId), loadEditorSceneFonts(effectDocument, sceneId)]).then(([textures, spines, fonts]) => {
       if (cancelled) return;
 
       // Пока грузились ассеты, могли пройти нестуктурные коммиты — строим по самому свежему документу.
@@ -670,7 +672,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const builtScene = buildDocument.scenes.find((candidate) => candidate.id === sceneId);
       if (builtScene === undefined) return;
       // Editor canvas — authoring-поверхность: контролы не перехватывают selection и drag.
-      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, { interaction: "authoring", textures, spines });
+      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, { interaction: "authoring", textures, spines, fonts });
       const technicalRootNodeId = editingPrefabName === null ? getSceneRoot(builtScene)?.id : undefined;
       for (const [nodeId, nodeView] of nodeViews) {
         if (nodeId === technicalRootNodeId) {
@@ -696,6 +698,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       sceneRootRef.current = root;
       nodeViewsRef.current = nodeViews;
       texturesRef.current = textures;
+      fontsRef.current = fonts;
       spineDataRef.current = spines;
       world.addChild(root);
       const playbackState = useEditorStore.getState();
@@ -759,12 +762,13 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   useEffect(() => {
     if (application === null || viewMode !== "single") return;
     const textures = texturesRef.current;
-    if (textures.size === 0) return;
+    const fonts = fontsRef.current;
     let cancelled = false;
 
-    void loadEditorSceneTextures(document, sceneId).then((loadedTextures) => {
-      if (cancelled || texturesRef.current !== textures) return;
+    void Promise.all([loadEditorSceneTextures(document, sceneId), loadEditorSceneFonts(document, sceneId)]).then(([loadedTextures, loadedFonts]) => {
+      if (cancelled || texturesRef.current !== textures || fontsRef.current !== fonts) return;
       for (const [assetId, texture] of loadedTextures) textures.set(assetId, texture);
+      for (const [assetId, family] of loadedFonts) fonts.set(assetId, family);
 
       const scene = document.scenes.find((candidate) => candidate.id === sceneId);
       if (scene === undefined) return;
@@ -775,7 +779,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         }
       }
     }).catch((error: unknown) => {
-      console.error(`Unable to load textures for scene '${sceneId}'.`, error);
+      console.error(`Unable to load scene assets for '${sceneId}'.`, error);
     });
 
     return () => {

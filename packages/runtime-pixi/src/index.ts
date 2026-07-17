@@ -9,3 +9,4 @@ export { buildSceneView, collectRenderedNodes, updateNodeView, loadSceneView } f
 export * from "./controls.js";
 export * from "./assets/textures.js";
 export * from "./assets/spine.js";
+export * from "./assets/fonts.js";

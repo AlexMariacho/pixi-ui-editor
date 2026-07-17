@@ -19,6 +19,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     if (patch.name !== undefined) node.name = patch.name;
     if (patch.visible !== undefined) node.visible = patch.visible;
     if (patch.text !== undefined && node.type === "text") node.text = patch.text;
+    if (patch.style !== undefined && node.type === "text") node.style = patch.style;
 
     return commitCandidate(state, candidate, "Node update was rejected because it makes the project document invalid.");
   }),
@@ -207,7 +208,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       }
       node = { ...base, type, states: { normalAssetId: asset.id }, enabled: true };
     } else if (type === "text") {
-      node = { ...base, type, text: "New text" };
+      node = { ...base, type, text: "New text", style: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 } };
     } else {
       node = { ...base, type };
     }

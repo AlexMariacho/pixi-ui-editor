@@ -16,7 +16,10 @@ const Override = Type.Object({ visible: Type.Optional(Type.Boolean()), transform
 const NodeBase = Type.Object({ id: Id, name: Name, parentId: Type.Union([Id, Type.Null()]), children: Type.Array(Id), visible: Type.Boolean(), transform: Transform, layoutOverrides: Type.Optional(Type.Partial(Type.Object({ desktop: Override, mobile: Override }))), binding: Type.Optional(Type.String()) });
 const Container = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("container") })]);
 const Image = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("image"), assetId: Id })]);
-const Text = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("text"), text: Type.String() })]);
+const TextStroke = Type.Object({ color: Type.String({ pattern: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" }), width: Type.Number({ minimum: 0 }) });
+export const TextStyleDefinitionSchema = Type.Object({ fontAssetId: Type.Optional(Id), fontFamily: Type.String({ minLength: 1 }), fontSize: Type.Number({ exclusiveMinimum: 0 }), fontWeight: Type.Union([Type.Literal("normal"), Type.Literal("bold")]), fontStyle: Type.Union([Type.Literal("normal"), Type.Literal("italic")]), fill: Type.String({ pattern: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" }), align: Type.Union([Type.Literal("left"), Type.Literal("center"), Type.Literal("right"), Type.Literal("justify")]), verticalAlign: Type.Union([Type.Literal("top"), Type.Literal("middle"), Type.Literal("bottom")]), wordWrap: Type.Boolean(), breakWords: Type.Boolean(), lineHeight: Type.Optional(Type.Number({ exclusiveMinimum: 0 })), letterSpacing: Type.Number(), stroke: Type.Optional(TextStroke) });
+export type TextStyleDefinition = Static<typeof TextStyleDefinitionSchema>;
+const Text = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("text"), text: Type.String(), style: Type.Optional(TextStyleDefinitionSchema) })]);
 const Spine = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("spine"), assetId: Id, animation: Type.Optional(Type.String({ minLength: 1 })), loop: Type.Optional(Type.Boolean()) })]);
 const PrefabInstance = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("prefab-instance"), prefabId: Id })]);
 /** Состояния кнопки. `normal` обязателен; остальные при отсутствии используют его изображение. */
@@ -37,7 +40,8 @@ export const AssetFileSchema = Type.Object({ name: Name, uri: Type.String({ minL
 export type AssetFile = Static<typeof AssetFileSchema>;
 const ImageAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("image"), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
 const SpineAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("spine"), files: Type.Object({ skeleton: AssetFileSchema, atlas: AssetFileSchema, textures: Type.Array(AssetFileSchema, { minItems: 1 }) }) });
-export const AssetSchema = Type.Union([ImageAsset, SpineAsset]);
+const FontAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("font"), family: Name, weight: Type.Union([Type.Literal("normal"), Type.Literal("bold")]), style: Type.Union([Type.Literal("normal"), Type.Literal("italic")]), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
+export const AssetSchema = Type.Union([ImageAsset, SpineAsset, FontAsset]);
 export type Asset = Static<typeof AssetSchema>;
 export const PrefabDefinitionSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), exposedProperties: Type.Array(Type.Object({ name: Name, type: Type.Union([Type.Literal("string"), Type.Literal("number"), Type.Literal("boolean"), Type.Literal("asset"), Type.Literal("visibility")]) })) });
 export type PrefabDefinition = Static<typeof PrefabDefinitionSchema>;
@@ -78,6 +82,7 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     if (node.type === "image" || node.type === "spine") { const asset = assets.get(node.assetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/assetId`, `Asset '${node.assetId}' does not exist.`); else if (asset.type !== node.type) add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/assetId`, `A ${node.type} node requires a ${node.type} asset.`); }
     // Путь ошибки сохраняется до конкретного state field, чтобы Inspector мог подсветить нужный picker.
     if (node.type === "button") BUTTON_STATE_KEYS.forEach((state) => { const field = `${state}AssetId` as const; const assetId = node.states[field]; if (assetId === undefined) return; const asset = assets.get(assetId), path = `${nodePath}/states/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${assetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, `A button '${state}' state requires an image asset.`); });
+    if (node.type === "text" && node.style?.fontAssetId !== undefined) { const asset = assets.get(node.style.fontAssetId), path = `${nodePath}/style/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.style.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "A text node fontAssetId requires a font asset."); }
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
     checkResolvedSizes(node, nodePath, issues);
   });
@@ -86,7 +91,8 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
 function semantic(document: ProjectDocument): ValidationIssue[] {
   const issues: ValidationIssue[] = [], ids = new Set<string>(), register = (id: string, path: string) => { if (ids.has(id)) add(issues, "DUPLICATE_ID", path, `Duplicate entity ID '${id}'.`); ids.add(id); };
   register(document.project.id, "/project/id"); const assets = new Map<string, Asset>(), prefabs = new Set<string>();
-  document.assets.forEach((asset, i) => { register(asset.id, `/assets/${i}/id`); assets.set(asset.id, asset); }); document.prefabs.forEach((prefab, i) => { register(prefab.id, `/prefabs/${i}/id`); prefabs.add(prefab.id); }); document.scenes.forEach((scene, i) => register(scene.id, `/scenes/${i}/id`));
+  const fontMediaTypes = new Set(["font/woff2", "font/woff", "font/ttf", "font/otf", "application/font-woff", "application/x-font-ttf", "application/x-font-opentype"]);
+  document.assets.forEach((asset, i) => { register(asset.id, `/assets/${i}/id`); assets.set(asset.id, asset); if (asset.type === "font" && !fontMediaTypes.has(asset.source.mediaType)) add(issues, "INVALID_FONT_MEDIA_TYPE", `/assets/${i}/source/mediaType`, `Unsupported font media type '${asset.source.mediaType}'.`); }); document.prefabs.forEach((prefab, i) => { register(prefab.id, `/prefabs/${i}/id`); prefabs.add(prefab.id); }); document.scenes.forEach((scene, i) => register(scene.id, `/scenes/${i}/id`));
   document.prefabs.forEach((prefab, i) => { prefab.nodes.forEach((node, j) => register(node.id, `/prefabs/${i}/nodes/${j}/id`)); hierarchy(prefab, `/prefabs/${i}`, assets, prefabs, issues); });
   document.scenes.forEach((scene, i) => { scene.nodes.forEach((node, j) => register(node.id, `/scenes/${i}/nodes/${j}/id`)); hierarchy(scene, `/scenes/${i}`, assets, prefabs, issues); const bindings = new Set<string>(); scene.nodes.forEach((node, j) => { if (node.binding !== undefined) { const binding = node.binding.trim(); if (!binding) add(issues, "EMPTY_BINDING", `/scenes/${i}/nodes/${j}/binding`, "Binding must not be empty after trimming."); else if (bindings.has(binding)) add(issues, "DUPLICATE_BINDING", `/scenes/${i}/nodes/${j}/binding`, `Binding '${binding}' is duplicated in this scene.`); else bindings.add(binding); } }); });
   return issues;

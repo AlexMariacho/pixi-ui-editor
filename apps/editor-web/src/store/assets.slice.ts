@@ -1,13 +1,18 @@
 import { createStableId } from "@pixi-ui-editor/schema";
 import { commitCandidate, getEditingTarget } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addImageAsset" | "addSpineAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
+type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
 export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
   addImageAsset: (name, source) => set((state) => {
     const candidate = structuredClone(state.document);
     candidate.assets.push({ id: createStableId(), name, type: "image", source: { ...source } });
 
     return commitCandidate(state, candidate, "Image asset creation was rejected because it makes the project document invalid.");
+  }),
+  addFontAsset: (name, family, weight, style, source) => set((state) => {
+    const candidate = structuredClone(state.document);
+    candidate.assets.push({ id: createStableId(), name, type: "font", family, weight, style, source: { ...source } });
+    return commitCandidate(state, candidate, "Font asset creation was rejected because it makes the project document invalid.");
   }),
   addSpineAsset: (name, files) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -40,8 +45,8 @@ export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
       return state;
     }
 
-    if (asset.type !== "image") {
-      console.warn(`Cannot replace image source for asset '${assetId}': it is not an image asset.`);
+    if (asset.type !== "image" && asset.type !== "font") {
+      console.warn(`Cannot replace source for asset '${assetId}': it is not an image or font asset.`);
       return state;
     }
     asset.source = { ...source, version: new Date().toISOString() };

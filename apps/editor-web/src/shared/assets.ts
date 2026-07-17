@@ -1,4 +1,4 @@
-import { loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { loadSceneFonts, loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
 import type { Texture } from "pixi.js";
 import sampleLogoUrl from "../../../../examples/sample-project/assets/sample-logo.png";
@@ -56,6 +56,8 @@ export async function loadEditorSpineAssetSize(asset: Asset): Promise<{ width: n
 export function loadEditorSceneSpines(document: ProjectDocument, sceneId: string) {
   return loadSceneSpines(document, sceneId, resolveFileUrl, spineCache);
 }
+
+export function loadEditorSceneFonts(document: ProjectDocument, sceneId: string) { return loadSceneFonts(document, sceneId, resolveFileUrl); }
 
 export function clearEditorSpineCache(skeletonUri?: string) {
   if (skeletonUri === undefined) spineCache.clear();

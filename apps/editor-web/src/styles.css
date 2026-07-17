@@ -684,7 +684,7 @@ body { margin: 0; }
   font-size: 12px;
 }
 
-.inspector-field input[type="text"], .inspector-field input[type="number"] {
+.inspector-field input[type="text"], .inspector-field input[type="number"], .inspector-field textarea {
   width: 100%;
   min-width: 0;
   padding: 3px 6px;
@@ -695,6 +695,8 @@ body { margin: 0; }
   border: 1px solid var(--border);
   border-radius: 3px;
 }
+
+.inspector-field textarea { resize: vertical; min-height: 76px; line-height: 1.35; }
 
 .inspector-field input:focus { border-color: var(--accent); outline: none; }
 

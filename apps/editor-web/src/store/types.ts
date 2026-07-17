@@ -1,5 +1,5 @@
 import type { StoreApi } from "zustand";
-import type { AssetFile, ButtonStateKey, LayoutProfileId, PrefabDefinition, ProjectDocument, Scene, UINode } from "@pixi-ui-editor/schema";
+import type { AssetFile, ButtonStateKey, LayoutProfileId, PrefabDefinition, ProjectDocument, Scene, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
@@ -29,12 +29,13 @@ export type EditorState = {
   renameScene(sceneId: string, name: string): void;
   deleteScene(sceneId: string): void;
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
-  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string }): void;
+  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string; style?: TextStyleDefinition }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   updateNodeProfileTransforms(updates: { nodeId: string; patch: Partial<UINode["transform"]> }[]): void;
   setNodeProfileAnchor(nodeId: string, anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
+  addFontAsset(name: string, family: string, weight: "normal" | "bold", style: "normal" | "italic", source: { uri: string; mediaType: string }): void;
   addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
   setImageNodeAsset(nodeId: string, assetId: string): void;
   replaceAssetSource(assetId: string, source: { uri: string; mediaType: string }): void;

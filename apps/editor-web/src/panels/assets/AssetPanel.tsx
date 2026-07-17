@@ -9,6 +9,9 @@ import { FloatingWindow } from "../../shared/FloatingWindow.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const ACCEPTED_FONT_TYPES = new Set(["font/woff2", "font/woff", "font/ttf", "font/otf", "application/font-woff", "application/x-font-ttf", "application/x-font-opentype"]);
+const fontExtension = /\.(woff2?|ttf|otf)$/i;
+const fontMediaType = (file: File) => file.type || (file.name.toLowerCase().endsWith(".woff2") ? "font/woff2" : file.name.toLowerCase().endsWith(".woff") ? "font/woff" : file.name.toLowerCase().endsWith(".ttf") ? "font/ttf" : "font/otf");
 const imageExtension = /\.(png|jpe?g|webp)$/i;
 const extension = (name: string) => name.slice(name.lastIndexOf(".")).toLowerCase();
 const assetNameFromFile = (name: string) => name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
@@ -100,7 +103,7 @@ function SpinePreview({ asset }: { asset: Extract<Asset, { type: "spine" }> }) {
 
 export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid" }) {
   const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs);
-  const addImageAsset = useEditorStore((state) => state.addImageAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
+  const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null); const dragDepthRef = useRef(0); const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null); const [isDragActive, setIsDragActive] = useState(false); const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const importFiles = async (files: File[], assetIdToReplace: string | null) => {
     const spineMode = files.some((file) => extension(file.name) === ".atlas");
@@ -113,6 +116,12 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
     }
     if (assetIdToReplace !== null && files.length !== 1) { window.alert("Image replacement requires exactly one image file."); return; }
     for (const file of files) {
+      const isFont = ACCEPTED_FONT_TYPES.has(file.type) || fontExtension.test(file.name);
+      if (isFont) {
+        if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "font") { window.alert("A font can only replace a font asset."); continue; }
+        try { const source = await readFile(file); const mediaType = fontMediaType(file); if (assetIdToReplace === null) addFontAsset(assetNameFromFile(file.name), assetNameFromFile(file.name), "normal", "normal", { uri: source.uri, mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
+        continue;
+      }
       if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES) { window.alert(`'${file.name}' is not a supported image up to 2 MB.`); continue; }
       try { const source = await readFile(file); if (assetIdToReplace === null) addImageAsset(assetNameFromFile(file.name), { uri: source.uri, mediaType: source.mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType: source.mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
     }
@@ -123,7 +132,7 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
   const drop = (event: DragEvent<HTMLElement>) => { if (!hasFiles(event)) return; event.preventDefault(); dragDepthRef.current = 0; setIsDragActive(false); void importFiles([...event.dataTransfer.files], null); };
   const selected = assets.find((asset) => asset.id === selectedAssetId);
   return <section className={`asset-panel${isDragActive ? " asset-panel-drop-active" : ""}`} aria-label="Assets" onDragEnter={(event) => { if (hasFiles(event)) { dragDepthRef.current += 1; setIsDragActive(true); } }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (hasFiles(event) && --dragDepthRef.current <= 0) { dragDepthRef.current = 0; setIsDragActive(false); } }} onDrop={drop}>
-    <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp" onChange={upload} /><p className="asset-panel-drop-hint">Drop images or a Spine JSON + atlas + textures bundle here</p>
+    <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp,.woff2,.woff,.ttf,.otf" onChange={upload} /><p className="asset-panel-drop-hint">Drop images, fonts, or a Spine JSON + atlas + textures bundle here</p>
     <ul className={`asset-list asset-list-${viewMode}`}>{assets.map((asset) => { const usage = [...scenes, ...prefabs].flatMap((owner) => owner.nodes).filter((node) => collectNodeAssetIds(node).includes(asset.id)).length; return <li key={asset.id} draggable className={`${viewMode === "grid" ? "asset-grid-tile" : viewMode === "compact" ? "asset-compact-row" : "asset-row"}${selectedAssetId === asset.id ? " asset-selected" : ""}`} onDragStart={(event) => { event.dataTransfer.setData("application/x-pixi-ui-editor-asset", asset.id); event.dataTransfer.effectAllowed = "copy"; }} onClick={() => setSelectedAssetId(asset.id)}>{viewMode !== "compact" && <AssetPreview asset={asset} />}<div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}{viewMode === "list" ? ` (${usage})` : ""}</span><span className="asset-type">{asset.type}</span></div>{viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}<div className="asset-actions"><button type="button" onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button></div></li>; })}</ul>
     {selected?.type === "image" && <ImagePreview asset={selected} />}
     {selected?.type === "spine" && <SpinePreview key={selected.id} asset={selected} />}

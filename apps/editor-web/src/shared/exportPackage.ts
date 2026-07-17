@@ -41,6 +41,9 @@ export function buildExportEntries(projectDocument: ProjectDocument, resolveFile
   for (const asset of document.assets) {
     if (asset.type === "image") {
       asset.source.uri = addFile(asset.id, imageFileName(asset), asset.source.uri);
+    } else if (asset.type === "font") {
+      const extension = asset.source.mediaType.split("/")[1] ?? "font";
+      asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}.${sanitizeName(extension)}`, asset.source.uri);
     } else {
       asset.files.skeleton.uri = addFile(asset.id, asset.files.skeleton.name, asset.files.skeleton.uri);
       asset.files.atlas.uri = addFile(asset.id, asset.files.atlas.name, asset.files.atlas.uri);

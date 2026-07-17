@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { buildSceneView, loadSceneSpines, loadSceneTextures, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, loadSceneFonts, loadSceneSpines, loadSceneTextures, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument } from "@pixi-ui-editor/schema";
 import { Application, Container, type Texture } from "pixi.js";
 import { resolveFileUrl } from "../../shared/assets.js";
@@ -110,12 +110,13 @@ export function RuntimePreview() {
       const currentPayload = payload;
       const tokenAtStart = ++buildToken;
       try {
-        const [textures, spines] = await Promise.all([
+        const [textures, spines, fonts] = await Promise.all([
           loadSceneTextures(currentPayload.document, currentPayload.sceneId, (asset) => asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined, textureCache),
           loadSceneSpines(currentPayload.document, currentPayload.sceneId, resolveFileUrl, spineCache),
+          loadSceneFonts(currentPayload.document, currentPayload.sceneId, resolveFileUrl),
         ]);
         // Preview — не authoring-поверхность: контролы получают настоящие pointer events.
-        const { root } = buildSceneView(currentPayload.document, currentPayload.sceneId, currentPayload.profile, { interaction: "runtime", textures, spines });
+        const { root } = buildSceneView(currentPayload.document, currentPayload.sceneId, currentPayload.profile, { interaction: "runtime", textures, spines, fonts });
         if (disposed || tokenAtStart !== buildToken) {
           root.destroy({ children: true });
           return;

@@ -6,14 +6,14 @@ import { ContainerNodeView, ImageNodeView, PrefabInstanceNodeView, TextNodeView 
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
 
-export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined): NodeView {
+export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>): NodeView {
   switch (node.type) {
     case "container":
       return new ContainerNodeView();
     case "image":
       return new ImageNodeView(node.assetId, textures);
     case "text":
-      return new TextNodeView(node.text);
+      return new TextNodeView(node.text, fonts);
     case "spine":
       return new SpineNodeView(spines?.get(node.assetId), node.animation, node.loop ?? true);
     case "button":
@@ -38,8 +38,9 @@ export function collectNodeAssetIds(node: UINode): string[] {
         .map((state) => node.states[`${state}AssetId`])
         .filter((assetId): assetId is string => assetId !== undefined);
     case "container":
-    case "text":
     case "prefab-instance":
       return [];
+    case "text":
+      return node.style?.fontAssetId === undefined ? [] : [node.style.fontAssetId];
   }
 }
