@@ -3,6 +3,7 @@ import { type ButtonStateKey } from "@pixi-ui-editor/schema";
 import { Container } from "pixi.js";
 import { ButtonNodeView } from "./views/ButtonNodeView.js";
 import { NodeView } from "./views/NodeView.js";
+import { ProgressBarNodeView, SliderNodeView } from "./views/ValueControlNodeViews.js";
 
 function findSpineChild(view: Container): Spine | undefined {
   if (view instanceof NodeView) return view.getSpine();
@@ -36,6 +37,16 @@ export function setSpineViewFrame(view: Container, frame: number, skeletonData: 
 /** Forces an editor-only button state; the node's serialized `enabled` and states stay untouched. */
 export function setButtonViewState(view: Container, state: ButtonStateKey): void {
   if (view instanceof ButtonNodeView) view.setState(state);
+}
+
+/** Applies an editor-only slider preview value without touching the document. */
+export function setSliderViewValue(view: Container, value: number): void {
+  if (view instanceof SliderNodeView) view.value = value;
+}
+
+/** Applies an editor-only progress preview without touching the document. */
+export function setProgressBarViewProgress(view: Container, progress: number): void {
+  if (view instanceof ProgressBarNodeView) view.progress = progress;
 }
 
 /** Enables or pauses editor-only automatic playback without affecting serialized node data. */

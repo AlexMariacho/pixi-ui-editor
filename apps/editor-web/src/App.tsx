@@ -24,6 +24,8 @@ export function App() {
   const selectedNodeIds = useEditorStore((state) => state.selectedNodeIds);
   const spineFrameRequest = useEditorStore((state) => selectedNodeId === null ? undefined : state.spineFrameRequests[selectedNodeId]);
   const buttonPreviewState = useEditorStore((state) => selectedNodeId === null ? undefined : state.buttonPreviewStates[selectedNodeId]);
+  const sliderPreviewValue = useEditorStore((state) => selectedNodeId === null ? undefined : state.sliderPreviewValues[selectedNodeId]);
+  const progressBarPreviewValue = useEditorStore((state) => selectedNodeId === null ? undefined : state.progressBarPreviewValues[selectedNodeId]);
   const spineAutoplay = useEditorStore((state) => selectedNodeId === null ? true : state.spineAutoplay[selectedNodeId] ?? true);
   const addNode = useEditorStore((state) => state.addNode);
   const addNodeFromAsset = useEditorStore((state) => state.addNodeFromAsset);
@@ -101,7 +103,7 @@ export function App() {
           <button type="button" className={`assets-window-trigger${presetsWindowOpen ? " screen-resolutions-trigger-open" : ""}`} aria-pressed={presetsWindowOpen} onClick={() => setPresetsWindowOpen(!presetsWindowOpen)}>Presets</button>
         </div>
       </aside>
-      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} buttonPreviewState={buttonPreviewState} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
+      <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} buttonPreviewState={buttonPreviewState} sliderPreviewValue={sliderPreviewValue} progressBarPreviewValue={progressBarPreviewValue} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
   );

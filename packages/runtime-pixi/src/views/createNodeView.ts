@@ -7,6 +7,7 @@ import { InputNodeView } from "./InputNodeView.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 import { ScrollViewNodeView } from "./ScrollViewNodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
+import { ProgressBarNodeView, SliderNodeView } from "./ValueControlNodeViews.js";
 
 export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>): NodeView {
   switch (node.type) {
@@ -28,6 +29,10 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
       return new ButtonNodeView(node, textures, interaction);
     case "input":
       return new InputNodeView(node, textures, interaction, fonts);
+    case "slider":
+      return new SliderNodeView(node, textures, interaction, fonts);
+    case "progress-bar":
+      return new ProgressBarNodeView(node, textures);
     case "prefab-instance":
       return new PrefabInstanceNodeView(expandPrefab?.(node.prefabId));
   }
@@ -66,5 +71,12 @@ export function collectNodeAssetIds(node: UINode): string[] {
       if (node.textStyle.fontAssetId !== undefined) ids.push(node.textStyle.fontAssetId);
       return ids;
     }
+    case "slider": {
+      const ids = [node.backgroundAssetId, node.fillAssetId, node.handleAssetId];
+      if (node.valueTextStyle?.fontAssetId !== undefined) ids.push(node.valueTextStyle.fontAssetId);
+      return ids;
+    }
+    case "progress-bar":
+      return [node.backgroundAssetId, node.fillAssetId];
   }
 }

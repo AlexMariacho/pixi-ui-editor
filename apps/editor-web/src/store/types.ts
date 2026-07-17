@@ -1,10 +1,12 @@
 import type { StoreApi } from "zustand";
-import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, PrefabDefinition, ProjectDocument, Scene, ScrollViewSettings, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
+import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, PrefabDefinition, ProgressBarNode, ProjectDocument, Scene, ScrollViewSettings, SliderNode, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
-export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "scroll-view" | "image" | "text" | "spine" | "button" | "input";
+export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "scroll-view" | "image" | "text" | "spine" | "button" | "input" | "slider" | "progress-bar";
 export type InputPatch = Partial<Pick<InputNode, "backgroundAssetId" | "placeholder" | "defaultValue" | "maxLength" | "secure" | "align" | "padding" | "cleanOnFocus" | "clipText" | "textStyle">>;
+export type SliderPatch = Partial<Pick<SliderNode, "backgroundAssetId" | "fillAssetId" | "handleAssetId" | "min" | "max" | "step" | "defaultValue" | "fillPadding" | "showValue" | "valueTextStyle">>;
+export type ProgressBarPatch = Partial<Pick<ProgressBarNode, "backgroundAssetId" | "fillAssetId" | "defaultProgress" | "fillPadding">>;
 
 export type EditorState = {
   document: ProjectDocument;
@@ -20,6 +22,9 @@ export type EditorState = {
   spineAutoplay: Record<string, boolean>;
   /** Transient authoring aid: shows one button state on the canvas. Never serialized. */
   buttonPreviewStates: Record<string, ButtonStateKey>;
+  /** Transient control values shown only on the inert authoring canvas. */
+  sliderPreviewValues: Record<string, number>;
+  progressBarPreviewValues: Record<string, number>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -38,6 +43,10 @@ export type EditorState = {
   setLayoutGroupBackgroundAsset(nodeId: string, assetId: string | undefined): void;
   updateScrollView(nodeId: string, patch: Partial<ScrollViewSettings>): void;
   updateInput(nodeId: string, patch: InputPatch): void;
+  updateSlider(nodeId: string, patch: SliderPatch): void;
+  updateProgressBar(nodeId: string, patch: ProgressBarPatch): void;
+  previewSliderValue(nodeId: string, value: number): void;
+  previewProgressBar(nodeId: string, progress: number): void;
   setNodeProfileAnchor(nodeId: string, anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;

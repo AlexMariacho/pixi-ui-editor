@@ -7,6 +7,7 @@ export * from "./views/NodeView.js";
 export { ButtonNodeView } from "./views/ButtonNodeView.js";
 export { InputNodeView } from "./views/InputNodeView.js";
 export { ScrollViewNodeView } from "./views/ScrollViewNodeView.js";
+export { ProgressBarNodeView, SliderNodeView } from "./views/ValueControlNodeViews.js";
 export { collectNodeAssetIds } from "./views/createNodeView.js";
 export type { BuildSceneViewOptions } from "./scene.js";
 export { buildSceneView, collectRenderedNodes, previewNodeView, updateNodeView, loadSceneView } from "./scene.js";

@@ -6,6 +6,7 @@ const keyOf = (asset: Extract<Asset, { type: "font" }>) => `${asset.source.uri}#
 const fromNodes = (nodes: UINode[]) => nodes.flatMap((node) => {
   if (node.type === "text" && node.style?.fontAssetId) return [node.style.fontAssetId];
   if (node.type === "input" && node.textStyle.fontAssetId) return [node.textStyle.fontAssetId];
+  if (node.type === "slider" && node.valueTextStyle?.fontAssetId) return [node.valueTextStyle.fontAssetId];
   return [];
 });
 

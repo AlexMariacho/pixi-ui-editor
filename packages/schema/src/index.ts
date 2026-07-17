@@ -80,7 +80,27 @@ const Input = Type.Composite([NodeBase, Type.Object({
   clipText: Type.Boolean(),
   textStyle: TextStyleDefinitionSchema,
 })]);
-export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView, Input]);
+const Slider = Type.Composite([NodeBase, Type.Object({
+  type: Type.Literal("slider"),
+  backgroundAssetId: Id,
+  fillAssetId: Id,
+  handleAssetId: Id,
+  min: Type.Number(),
+  max: Type.Number(),
+  step: Type.Number(),
+  defaultValue: Type.Number(),
+  fillPadding: Padding,
+  showValue: Type.Optional(Type.Boolean()),
+  valueTextStyle: Type.Optional(TextStyleDefinitionSchema),
+})]);
+const ProgressBar = Type.Composite([NodeBase, Type.Object({
+  type: Type.Literal("progress-bar"),
+  backgroundAssetId: Id,
+  fillAssetId: Id,
+  defaultProgress: Type.Number(),
+  fillPadding: Padding,
+})]);
+export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView, Input, Slider, ProgressBar]);
 export type UINode = Static<typeof UINodeSchema>;
 export type LayoutGroupNode = Extract<UINode, { type: "horizontal-layout" | "vertical-layout" | "grid-layout" }>;
 export function isLayoutGroup(node: UINode): node is LayoutGroupNode { return node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"; }
@@ -92,6 +112,8 @@ export function isScrollView(node: UINode): node is ScrollViewNode { return node
 /** A direct child of this node does not own its own position: a layout group's Yoga solver or a scroll-view's `@pixi/ui` List does. */
 export function isPositionManagingContainer(node: UINode): boolean { return isLayoutGroup(node) || isScrollView(node); }
 export type InputNode = Extract<UINode, { type: "input" }>;
+export type SliderNode = Extract<UINode, { type: "slider" }>;
+export type ProgressBarNode = Extract<UINode, { type: "progress-bar" }>;
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
 export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
 export type Scene = Static<typeof SceneSchema>;
@@ -145,6 +167,22 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     if (node.type === "text" && node.style?.fontAssetId !== undefined) { const asset = assets.get(node.style.fontAssetId), path = `${nodePath}/style/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.style.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "A text node fontAssetId requires a font asset."); }
     if (node.type === "input" && node.backgroundAssetId !== undefined) { const asset = assets.get(node.backgroundAssetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, `Background asset '${node.backgroundAssetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, "An input background requires an image asset."); }
     if (node.type === "input" && node.textStyle.fontAssetId !== undefined) { const asset = assets.get(node.textStyle.fontAssetId), path = `${nodePath}/textStyle/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.textStyle.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "An input node textStyle fontAssetId requires a font asset."); }
+    if (node.type === "slider" || node.type === "progress-bar") {
+      const imageReferences: [string, string][] = [["backgroundAssetId", node.backgroundAssetId], ["fillAssetId", node.fillAssetId]];
+      if (node.type === "slider") imageReferences.push(["handleAssetId", node.handleAssetId]);
+      for (const [field, assetId] of imageReferences) {
+        const asset = assets.get(assetId);
+        const assetPath = `${nodePath}/${field}`;
+        if (!asset) add(issues, "MISSING_ASSET_REFERENCE", assetPath, `Asset '${assetId}' does not exist.`);
+        else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", assetPath, `A ${node.type} ${field} requires an image asset.`);
+      }
+    }
+    if (node.type === "slider") {
+      if (!(node.min < node.max) || !(node.step > 0)) add(issues, "INVALID_VALUE_RANGE", nodePath, "A slider requires min < max and step > 0.");
+      if (node.defaultValue < node.min || node.defaultValue > node.max) add(issues, "VALUE_OUT_OF_RANGE", `${nodePath}/defaultValue`, "Slider defaultValue must be inside the inclusive min/max range.");
+      if (node.valueTextStyle?.fontAssetId !== undefined) { const asset = assets.get(node.valueTextStyle.fontAssetId), fontPath = `${nodePath}/valueTextStyle/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", fontPath, `Asset '${node.valueTextStyle.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", fontPath, "A slider valueTextStyle fontAssetId requires a font asset."); }
+    }
+    if (node.type === "progress-bar" && (node.defaultProgress < 0 || node.defaultProgress > 100)) add(issues, "VALUE_OUT_OF_RANGE", `${nodePath}/defaultProgress`, "Progress bar defaultProgress must be inside the inclusive 0..100 range.");
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
     if (node.type === "grid-layout" && node.layoutGroup.base.constraint !== "flexible" && node.layoutGroup.base.constraintCount === undefined) add(issues, "MISSING_GRID_CONSTRAINT_COUNT", `${nodePath}/layoutGroup/base/constraintCount`, "A fixed grid constraint requires constraintCount.");
     for (const profile of ["desktop", "mobile"] as const) {

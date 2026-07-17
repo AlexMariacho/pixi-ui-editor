@@ -211,7 +211,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
     ) + 1;
     // Текстовые ноды по своей природе прямоугольны: квадратный дефолт под fontSize 24 выглядит нелепо.
-    const defaultSize = type === "spine" ? { width: 200, height: 200 } : type === "text" || type === "input" ? { width: 200, height: 40 } : { width: 100, height: 100 };
+    const defaultSize = type === "spine" ? { width: 200, height: 200 } : type === "text" || type === "input" || type === "slider" || type === "progress-bar" ? { width: 200, height: 40 } : { width: 100, height: 100 };
     const transform = {
       x: 0,
       y: 0,
@@ -283,6 +283,16 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
         clipText: true,
         textStyle: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 },
       };
+    } else if (type === "slider" || type === "progress-bar") {
+      const asset = candidate.assets.find((candidateAsset) => candidateAsset.type === "image");
+      if (asset === undefined) {
+        console.warn(`Cannot add a ${type} node: the project document does not contain an image asset.`);
+        return state;
+      }
+      const fillPadding = { left: 0, right: 0, top: 0, bottom: 0 };
+      node = type === "slider"
+        ? { ...base, type, backgroundAssetId: asset.id, fillAssetId: asset.id, handleAssetId: asset.id, min: 0, max: 100, step: 1, defaultValue: 50, fillPadding, showValue: false }
+        : { ...base, type, backgroundAssetId: asset.id, fillAssetId: asset.id, defaultProgress: 50, fillPadding };
     } else {
       node = { ...base, type };
     }

@@ -8,6 +8,7 @@ import { SpineSection } from "./sections/SpineSection.js";
 import { TextSection } from "./sections/TextSection.js";
 import { TransformSection } from "./sections/TransformSection.js";
 import { LayoutGroupSection } from "./sections/LayoutGroupSection.js";
+import { ProgressBarSection, SliderSection } from "./sections/ValueControlsSection.js";
 
 export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UINode | undefined; readOnly?: boolean }) {
   if (selectedNode === undefined) return <p className="inspector-empty">Select a node</p>;
@@ -21,6 +22,8 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
     {(selectedNode.type === "horizontal-layout" || selectedNode.type === "vertical-layout" || selectedNode.type === "grid-layout") && <LayoutGroupSection node={selectedNode} />}
     {selectedNode.type === "scroll-view" && <ScrollViewSection node={selectedNode} />}
     {selectedNode.type === "input" && <InputSection node={selectedNode} />}
+    {selectedNode.type === "slider" && <SliderSection node={selectedNode} />}
+    {selectedNode.type === "progress-bar" && <ProgressBarSection node={selectedNode} />}
     <TransformSection node={selectedNode} readOnly={readOnly} />
     {selectedNode.type === "text" && <TextSection node={selectedNode} />}
   </fieldset>;

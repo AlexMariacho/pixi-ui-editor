@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { isPositionManagingContainer, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
@@ -52,7 +52,7 @@ function computeStructuralKey(document: ProjectDocument, sceneId: string, viewMo
 }
 
 
-export function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, buttonPreviewState, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
+export function SceneCanvas({ document, sceneId, activeProfile, activeTool, viewMode, selectedNodeIds, selectedNodeId, editingPrefabName, spineFrameRequest, spineAutoplay, buttonPreviewState, sliderPreviewValue, progressBarPreviewValue, deleteDisabled, setActiveProfile, addNode, addNodeFromAsset, addPrefabInstance, finishEditingPrefab }: {
   document: ProjectDocument;
   sceneId: string;
   activeProfile: LayoutProfileId;
@@ -64,6 +64,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   spineFrameRequest: number | undefined;
   spineAutoplay: boolean;
   buttonPreviewState: ButtonStateKey | undefined;
+  sliderPreviewValue: number | undefined;
+  progressBarPreviewValue: number | undefined;
   deleteDisabled: boolean;
   setActiveProfile: (profile: LayoutProfileId) => void;
   addNode: (type: AddableNodeType) => void;
@@ -693,6 +695,18 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
           if (buttonView !== undefined && previewState !== undefined) setButtonViewState(buttonView, previewState);
           continue;
         }
+        if (node.type === "slider") {
+          const value = playbackState.sliderPreviewValues[node.id];
+          const sliderView = nodeViews.get(node.id);
+          if (sliderView !== undefined && value !== undefined) setSliderViewValue(sliderView, value);
+          continue;
+        }
+        if (node.type === "progress-bar") {
+          const progress = playbackState.progressBarPreviewValues[node.id];
+          const progressView = nodeViews.get(node.id);
+          if (progressView !== undefined && progress !== undefined) setProgressBarViewProgress(progressView, progress);
+          continue;
+        }
         if (node.type !== "spine") continue;
         const view = nodeViews.get(node.id);
         if (view !== undefined) setSpineViewAutoplay(view, playbackState.spineAutoplay[node.id] ?? true);
@@ -737,6 +751,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const view = nodeViewsRef.current.get(node.id);
       if (view === undefined || view.destroyed) continue;
       updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId));
+      const playback = useEditorStore.getState();
+      if (node.type === "slider") setSliderViewValue(view, playback.sliderPreviewValues[node.id] ?? node.defaultValue);
+      if (node.type === "progress-bar") setProgressBarViewProgress(view, playback.progressBarPreviewValues[node.id] ?? node.defaultProgress);
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);
@@ -777,6 +794,18 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     const view = nodeViewsRef.current.get(selectedNodeId);
     if (view !== undefined) setButtonViewState(view, buttonPreviewState);
   }, [application, buttonPreviewState, selectedNodeId]);
+
+  useEffect(() => {
+    if (selectedNodeId === null) return;
+    const view = nodeViewsRef.current.get(selectedNodeId);
+    if (view !== undefined && sliderPreviewValue !== undefined) setSliderViewValue(view, sliderPreviewValue);
+  }, [application, selectedNodeId, sliderPreviewValue]);
+
+  useEffect(() => {
+    if (selectedNodeId === null) return;
+    const view = nodeViewsRef.current.get(selectedNodeId);
+    if (view !== undefined && progressBarPreviewValue !== undefined) setProgressBarViewProgress(view, progressBarPreviewValue);
+  }, [application, progressBarPreviewValue, selectedNodeId]);
 
   useEffect(() => {
     if (spineFrameRequest === undefined || selectedNodeId === null) return;
@@ -854,6 +883,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("input")}>+ Input</button>
+        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("slider")}>+ Slider</button>
+        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("progress-bar")}>+ Progress</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("button")}>+ Button</button>
         <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={commandTitle(EDITOR_COMMAND_IDS.deleteNode)} onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.deleteNode)}>Delete</button>
