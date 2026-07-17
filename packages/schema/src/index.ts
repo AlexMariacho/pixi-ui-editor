@@ -61,7 +61,26 @@ const ScrollViewSettings = Type.Object({
 });
 export type ScrollViewSettings = Static<typeof ScrollViewSettings>;
 const ScrollView = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("scroll-view"), scrollView: ScrollViewSettings })]);
-export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView]);
+const InputAlign = Type.Union([Type.Literal("left"), Type.Literal("center"), Type.Literal("right")]);
+export type InputAlign = Static<typeof InputAlign>;
+// Reuses the shared `TextStyleDefinition` (TASK-029) so an input never grows an incompatible parallel
+// font/style field set; fields that don't apply to a single line (wordWrap, verticalAlign, ...) are
+// simply ignored by the runtime view, the same way a button ignores unused optional state assets.
+const Input = Type.Composite([NodeBase, Type.Object({
+  type: Type.Literal("input"),
+  backgroundAssetId: Type.Optional(Id),
+  placeholder: Type.String(),
+  defaultValue: Type.String(),
+  // Positive integer: a character-count limit can't be fractional or non-positive.
+  maxLength: Type.Optional(Type.Integer({ exclusiveMinimum: 0 })),
+  secure: Type.Boolean(),
+  align: InputAlign,
+  padding: Padding,
+  cleanOnFocus: Type.Boolean(),
+  clipText: Type.Boolean(),
+  textStyle: TextStyleDefinitionSchema,
+})]);
+export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView, Input]);
 export type UINode = Static<typeof UINodeSchema>;
 export type LayoutGroupNode = Extract<UINode, { type: "horizontal-layout" | "vertical-layout" | "grid-layout" }>;
 export function isLayoutGroup(node: UINode): node is LayoutGroupNode { return node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"; }
@@ -72,6 +91,7 @@ export type ScrollViewNode = Extract<UINode, { type: "scroll-view" }>;
 export function isScrollView(node: UINode): node is ScrollViewNode { return node.type === "scroll-view"; }
 /** A direct child of this node does not own its own position: a layout group's Yoga solver or a scroll-view's `@pixi/ui` List does. */
 export function isPositionManagingContainer(node: UINode): boolean { return isLayoutGroup(node) || isScrollView(node); }
+export type InputNode = Extract<UINode, { type: "input" }>;
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
 export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
 export type Scene = Static<typeof SceneSchema>;
@@ -123,6 +143,8 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     // Путь ошибки сохраняется до конкретного state field, чтобы Inspector мог подсветить нужный picker.
     if (node.type === "button") BUTTON_STATE_KEYS.forEach((state) => { const field = `${state}AssetId` as const; const assetId = node.states[field]; if (assetId === undefined) return; const asset = assets.get(assetId), path = `${nodePath}/states/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${assetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, `A button '${state}' state requires an image asset.`); });
     if (node.type === "text" && node.style?.fontAssetId !== undefined) { const asset = assets.get(node.style.fontAssetId), path = `${nodePath}/style/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.style.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "A text node fontAssetId requires a font asset."); }
+    if (node.type === "input" && node.backgroundAssetId !== undefined) { const asset = assets.get(node.backgroundAssetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, `Background asset '${node.backgroundAssetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, "An input background requires an image asset."); }
+    if (node.type === "input" && node.textStyle.fontAssetId !== undefined) { const asset = assets.get(node.textStyle.fontAssetId), path = `${nodePath}/textStyle/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.textStyle.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "An input node textStyle fontAssetId requires a font asset."); }
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
     if (node.type === "grid-layout" && node.layoutGroup.base.constraint !== "flexible" && node.layoutGroup.base.constraintCount === undefined) add(issues, "MISSING_GRID_CONSTRAINT_COUNT", `${nodePath}/layoutGroup/base/constraintCount`, "A fixed grid constraint requires constraintCount.");
     for (const profile of ["desktop", "mobile"] as const) {

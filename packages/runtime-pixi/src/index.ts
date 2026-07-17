@@ -5,6 +5,7 @@ export * from "./layoutGroups.js";
 export * from "./scrollView.js";
 export * from "./views/NodeView.js";
 export { ButtonNodeView } from "./views/ButtonNodeView.js";
+export { InputNodeView } from "./views/InputNodeView.js";
 export { ScrollViewNodeView } from "./views/ScrollViewNodeView.js";
 export { collectNodeAssetIds } from "./views/createNodeView.js";
 export type { BuildSceneViewOptions } from "./scene.js";

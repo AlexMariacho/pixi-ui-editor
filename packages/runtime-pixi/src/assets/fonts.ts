@@ -3,7 +3,11 @@ import type { FileUrlResolver } from "./textures.js";
 
 const cache = new Map<string, Promise<string | undefined>>();
 const keyOf = (asset: Extract<Asset, { type: "font" }>) => `${asset.source.uri}#${asset.source.version ?? ""}`;
-const fromNodes = (nodes: UINode[]) => nodes.flatMap((node) => node.type === "text" && node.style?.fontAssetId ? [node.style.fontAssetId] : []);
+const fromNodes = (nodes: UINode[]) => nodes.flatMap((node) => {
+  if (node.type === "text" && node.style?.fontAssetId) return [node.style.fontAssetId];
+  if (node.type === "input" && node.textStyle.fontAssetId) return [node.textStyle.fontAssetId];
+  return [];
+});
 
 /** Loads scene fonts before views are built. A load failure is a warning and keeps system fallback usable. */
 export async function loadSceneFonts(document: ProjectDocument, sceneId: string, resolveFileUrl: FileUrlResolver): Promise<Map<string, string>> {

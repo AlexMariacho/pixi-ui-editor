@@ -1,6 +1,7 @@
 import type { UINode } from "@pixi-ui-editor/schema";
 import { ButtonSection } from "./sections/ButtonSection.js";
 import { ImageSection } from "./sections/ImageSection.js";
+import { InputSection } from "./sections/InputSection.js";
 import { NodeSection } from "./sections/NodeSection.js";
 import { ScrollViewSection } from "./sections/ScrollViewSection.js";
 import { SpineSection } from "./sections/SpineSection.js";
@@ -19,6 +20,7 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
     {selectedNode.type === "spine" && <SpineSection node={selectedNode} />}
     {(selectedNode.type === "horizontal-layout" || selectedNode.type === "vertical-layout" || selectedNode.type === "grid-layout") && <LayoutGroupSection node={selectedNode} />}
     {selectedNode.type === "scroll-view" && <ScrollViewSection node={selectedNode} />}
+    {selectedNode.type === "input" && <InputSection node={selectedNode} />}
     <TransformSection node={selectedNode} readOnly={readOnly} />
     {selectedNode.type === "text" && <TextSection node={selectedNode} />}
   </fieldset>;

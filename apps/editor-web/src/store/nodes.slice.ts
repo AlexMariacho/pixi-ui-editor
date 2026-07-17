@@ -4,7 +4,7 @@ import { getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/asse
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "updateScrollView" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
+type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "updateScrollView" | "updateInput" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
 export const createNodesSlice: EditorSlice<Keys> = (set) => ({
   setLayoutGroupBackgroundAsset: (nodeId, assetId) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -38,6 +38,22 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     if (node === undefined || node.type !== "scroll-view") return state;
     node.scrollView = { ...node.scrollView, ...patch };
     return commitCandidate(state, candidate, "Scroll view update was rejected because it makes the project document invalid.");
+  }),
+  updateInput: (nodeId, patch) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((item) => item.id === nodeId);
+    if (node === undefined || node.type !== "input") return state;
+    if ("backgroundAssetId" in patch) { if (patch.backgroundAssetId === undefined) delete node.backgroundAssetId; else node.backgroundAssetId = patch.backgroundAssetId; }
+    if ("maxLength" in patch) { if (patch.maxLength === undefined) delete node.maxLength; else node.maxLength = patch.maxLength; }
+    if (patch.placeholder !== undefined) node.placeholder = patch.placeholder;
+    if (patch.defaultValue !== undefined) node.defaultValue = patch.defaultValue;
+    if (patch.secure !== undefined) node.secure = patch.secure;
+    if (patch.align !== undefined) node.align = patch.align;
+    if (patch.padding !== undefined) node.padding = patch.padding;
+    if (patch.cleanOnFocus !== undefined) node.cleanOnFocus = patch.cleanOnFocus;
+    if (patch.clipText !== undefined) node.clipText = patch.clipText;
+    if (patch.textStyle !== undefined) node.textStyle = patch.textStyle;
+    return commitCandidate(state, candidate, "Input update was rejected because it makes the project document invalid.");
   }),
   updateNode: (nodeId, patch) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -194,11 +210,13 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       (count, candidateScene) => count + candidateScene.nodes.filter((node) => node.type === type).length,
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
     ) + 1;
+    // Текстовые ноды по своей природе прямоугольны: квадратный дефолт под fontSize 24 выглядит нелепо.
+    const defaultSize = type === "spine" ? { width: 200, height: 200 } : type === "text" || type === "input" ? { width: 200, height: 40 } : { width: 100, height: 100 };
     const transform = {
       x: 0,
       y: 0,
-      width: type === "spine" ? 200 : 100,
-      height: type === "spine" ? 200 : 100,
+      width: defaultSize.width,
+      height: defaultSize.height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
@@ -252,6 +270,19 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     } else if (type === "scroll-view") {
       const scrollView: ScrollViewSettings = { direction: "vertical", padding: { left: 0, right: 0, top: 0, bottom: 0 }, itemSpacing: 0, cornerRadius: 0, easingEnabled: true };
       node = { ...base, type, scrollView };
+    } else if (type === "input") {
+      node = {
+        ...base,
+        type,
+        placeholder: "Enter text",
+        defaultValue: "",
+        secure: false,
+        align: "left",
+        padding: { left: 8, right: 8, top: 4, bottom: 4 },
+        cleanOnFocus: false,
+        clipText: true,
+        textStyle: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 },
+      };
     } else {
       node = { ...base, type };
     }

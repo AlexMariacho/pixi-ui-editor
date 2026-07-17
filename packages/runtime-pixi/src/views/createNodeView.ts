@@ -3,6 +3,7 @@ import { type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 import { Container, Texture } from "pixi.js";
 import { ButtonNodeView } from "./ButtonNodeView.js";
 import { ContainerNodeView, ImageNodeView, LayoutGroupNodeView, PrefabInstanceNodeView, TextNodeView } from "./basic.js";
+import { InputNodeView } from "./InputNodeView.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 import { ScrollViewNodeView } from "./ScrollViewNodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
@@ -25,6 +26,8 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
       return new SpineNodeView(spines?.get(node.assetId), node.animation, node.loop ?? true);
     case "button":
       return new ButtonNodeView(node, textures, interaction);
+    case "input":
+      return new InputNodeView(node, textures, interaction, fonts);
     case "prefab-instance":
       return new PrefabInstanceNodeView(expandPrefab?.(node.prefabId));
   }
@@ -57,5 +60,11 @@ export function collectNodeAssetIds(node: UINode): string[] {
       return [];
     case "text":
       return node.style?.fontAssetId === undefined ? [] : [node.style.fontAssetId];
+    case "input": {
+      const ids: string[] = [];
+      if (node.backgroundAssetId !== undefined) ids.push(node.backgroundAssetId);
+      if (node.textStyle.fontAssetId !== undefined) ids.push(node.textStyle.fontAssetId);
+      return ids;
+    }
   }
 }

@@ -56,6 +56,7 @@ const NODE_TYPE_FIXTURES: Record<UINode["type"], (base: NodeBaseFields) => UINod
   button: (base) => ({ ...base, type: "button", enabled: true, states: { normalAssetId: ids.asset } }),
   "prefab-instance": (base) => ({ ...base, type: "prefab-instance", prefabId: "40000000-0000-4000-8000-00000000000f" }),
   "scroll-view": (base) => ({ ...base, type: "scroll-view", scrollView: { direction: "vertical", padding: { left: 0, right: 0, top: 0, bottom: 0 }, itemSpacing: 0, cornerRadius: 0, easingEnabled: true } }),
+  input: (base) => ({ ...base, type: "input", placeholder: "Enter text", defaultValue: "", secure: false, align: "left", padding: { left: 0, right: 0, top: 0, bottom: 0 }, cleanOnFocus: false, clipText: true, textStyle: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 } }),
 };
 
 /** FancyButton keeps exactly one state view visible, so the shown texture identifies the active state. */

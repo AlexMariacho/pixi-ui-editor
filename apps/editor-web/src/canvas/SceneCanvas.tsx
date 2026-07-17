@@ -27,6 +27,10 @@ function nodeStructure(node: UINode): unknown[] {
       // padding/itemSpacing/backgroundColor обновляются на живом view (ScrollViewNodeView.syncContent);
       // у @pixi/ui ScrollBox 2.3.2 нет безопасного публичного API для live-изменения этих полей.
       return [node.id, node.parentId, node.children, node.type, node.scrollView.direction, node.scrollView.cornerRadius, node.scrollView.easingEnabled, node.scrollView.shiftWheelHorizontal];
+    case "input":
+      // clipText включает internal mask у @pixi/ui Input только при (пере)присвоении bg, а безопасного
+      // способа снять маску после этого нет — переключение пересобирает сцену, как и у scroll-view.
+      return [node.id, node.parentId, node.children, node.type, node.clipText];
     default:
       return [node.id, node.parentId, node.children, node.type];
   }
@@ -849,6 +853,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("scroll-view")}>+ Scroll View</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("input")}>+ Input</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("button")}>+ Button</button>
         <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={commandTitle(EDITOR_COMMAND_IDS.deleteNode)} onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.deleteNode)}>Delete</button>
