@@ -11,7 +11,7 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
     case "container":
       return new ContainerNodeView();
     case "image":
-      return new ImageNodeView(textures?.get(node.assetId));
+      return new ImageNodeView(node.assetId, textures);
     case "text":
       return new TextNodeView(node.text);
     case "spine":
@@ -29,9 +29,17 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
  * usage count both read it, so a new node type can never silently drop out of one of them.
  */
 export function collectNodeAssetIds(node: UINode): string[] {
-  if (node.type === "image" || node.type === "spine") return [node.assetId];
-  if (node.type !== "button") return [];
-  return BUTTON_STATE_KEYS
-    .map((state) => node.states[`${state}AssetId`])
-    .filter((assetId): assetId is string => assetId !== undefined);
+  switch (node.type) {
+    case "image":
+    case "spine":
+      return [node.assetId];
+    case "button":
+      return BUTTON_STATE_KEYS
+        .map((state) => node.states[`${state}AssetId`])
+        .filter((assetId): assetId is string => assetId !== undefined);
+    case "container":
+    case "text":
+    case "prefab-instance":
+      return [];
+  }
 }

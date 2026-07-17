@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
-import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
+import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
@@ -18,7 +18,7 @@ const roundTransformValue = (value: number) => Math.round(value * 100) / 100;
 function nodeStructure(node: UINode): unknown[] {
   switch (node.type) {
     case "image":
-      return [node.id, node.parentId, node.children, node.type, node.assetId];
+      return [node.id, node.parentId, node.children, node.type];
     case "spine":
       return [node.id, node.parentId, node.children, node.type, node.assetId, node.animation, node.loop];
     case "prefab-instance":
@@ -68,6 +68,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   const artboardRef = useRef<Graphics | null>(null);
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
+  const texturesRef = useRef<Map<string, Texture>>(new Map());
   const spineDataRef = useRef<Map<string, SkeletonData>>(new Map());
   const spinePlaybackTickerRef = useRef<(() => void) | null>(null);
   const selectionGraphicsRef = useRef<Graphics | null>(null);
@@ -117,6 +118,10 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   const documentRef = useRef(document);
   documentRef.current = document;
   const structuralKey = useMemo(() => computeStructuralKey(document, sceneId, viewMode), [document, sceneId, viewMode]);
+  const renderedAssetReferencesKey = useMemo(() => {
+    const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+    return scene === undefined ? "[]" : JSON.stringify(collectRenderedNodes(document, scene).map((node) => [node.id, collectNodeAssetIds(node)]));
+  }, [document, sceneId]);
 
   const redrawSelectionRef = useRef<() => void>(() => {
     const selectionGraphics = selectionGraphicsRef.current;
@@ -690,6 +695,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       sceneRootRef.current?.destroy({ children: true });
       sceneRootRef.current = root;
       nodeViewsRef.current = nodeViews;
+      texturesRef.current = textures;
       spineDataRef.current = spines;
       world.addChild(root);
       const playbackState = useEditorStore.getState();
@@ -747,6 +753,35 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);
+
+  // An asset newly assigned to any rendered node may not have been loaded yet. Add it to the
+  // existing map and synchronize stable views in place instead of rebuilding the scene.
+  useEffect(() => {
+    if (application === null || viewMode !== "single") return;
+    const textures = texturesRef.current;
+    if (textures.size === 0) return;
+    let cancelled = false;
+
+    void loadEditorSceneTextures(document, sceneId).then((loadedTextures) => {
+      if (cancelled || texturesRef.current !== textures) return;
+      for (const [assetId, texture] of loadedTextures) textures.set(assetId, texture);
+
+      const scene = document.scenes.find((candidate) => candidate.id === sceneId);
+      if (scene === undefined) return;
+      for (const node of scene.nodes) {
+        const view = nodeViewsRef.current.get(node.id);
+        if (view !== undefined && !view.destroyed) {
+          updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile));
+        }
+      }
+    }).catch((error: unknown) => {
+      console.error(`Unable to load textures for scene '${sceneId}'.`, error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile, application, document, renderedAssetReferencesKey, sceneId, viewMode]);
 
   useEffect(() => {
     if (buttonPreviewState === undefined || selectedNodeId === null) return;

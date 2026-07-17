@@ -1,6 +1,6 @@
 import { Spine } from "@esotericsoftware/spine-pixi-v8";
 import { type LayoutProfileId, type UINode } from "@pixi-ui-editor/schema";
-import { Container, Rectangle, type PointData } from "pixi.js";
+import { Container, Rectangle, Texture, type PointData } from "pixi.js";
 import { resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "../layout.js";
 
 /**
@@ -17,8 +17,19 @@ export type SceneInteractionMode = "authoring" | "runtime";
  */
 export abstract class NodeView extends Container {
   protected content?: Container;
+  /** A mutable scene texture map: assets may be loaded after this stable view was created. */
+  protected readonly textures: ReadonlyMap<string, Texture> | undefined;
   /** Node's own grab rectangle in local space, kept equal to its resolved layout rectangle. */
   private readonly grabRect = new Rectangle();
+
+  constructor(textures?: ReadonlyMap<string, Texture>) {
+    super();
+    this.textures = textures;
+  }
+
+  protected textureFor(assetId: string): Texture | undefined {
+    return this.textures?.get(assetId);
+  }
 
   /**
    * Makes every node selectable and draggable by its layout rectangle, whatever it renders.

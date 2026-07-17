@@ -5,7 +5,7 @@ export * from "./views/NodeView.js";
 export { ButtonNodeView } from "./views/ButtonNodeView.js";
 export { collectNodeAssetIds } from "./views/createNodeView.js";
 export type { BuildSceneViewOptions } from "./scene.js";
-export { buildSceneView, updateNodeView, loadSceneView } from "./scene.js";
+export { buildSceneView, collectRenderedNodes, updateNodeView, loadSceneView } from "./scene.js";
 export * from "./controls.js";
 export * from "./assets/textures.js";
 export * from "./assets/spine.js";

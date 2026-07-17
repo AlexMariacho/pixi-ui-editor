@@ -1,4 +1,4 @@
-import { type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
+import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
 import { FancyButton } from "@pixi/ui";
 import { Container, Graphics, Sprite, Texture } from "pixi.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
@@ -15,27 +15,29 @@ const KEY_BY_FANCY_STATE = { default: "normal", hover: "hover", pressed: "presse
  */
 export class ButtonNodeView extends NodeView {
   private readonly button: FancyButton;
-  private readonly stateViews: Container[] = [];
+  private readonly stateViews: Record<ButtonStateKey, Container>;
   private readonly interaction: SceneInteractionMode;
   private enabledState: boolean;
 
   constructor(node: ButtonNode, textures: ReadonlyMap<string, Texture> | undefined, interaction: SceneInteractionMode) {
-    super();
+    super(textures);
     this.interaction = interaction;
+    const stateViews = {} as Record<ButtonStateKey, Container>;
     const normalTexture = textures?.get(node.states.normalAssetId);
-    const viewFor = (assetId: string | undefined): Container => {
+    const viewFor = (state: ButtonStateKey, assetId: string | undefined): Container => {
       const texture = (assetId === undefined ? undefined : textures?.get(assetId)) ?? normalTexture;
       const view = texture === undefined ? new Graphics() : new Sprite(texture);
-      this.stateViews.push(view);
+      stateViews[state] = view;
       return view;
     };
 
     this.button = new FancyButton({
-      defaultView: viewFor(node.states.normalAssetId),
-      hoverView: viewFor(node.states.hoverAssetId),
-      pressedView: viewFor(node.states.pressedAssetId),
-      disabledView: viewFor(node.states.disabledAssetId),
+      defaultView: viewFor("normal", node.states.normalAssetId),
+      hoverView: viewFor("hover", node.states.hoverAssetId),
+      pressedView: viewFor("pressed", node.states.pressedAssetId),
+      disabledView: viewFor("disabled", node.states.disabledAssetId),
     });
+    this.stateViews = stateViews;
     // Authoring-сцена инертна: FancyButton уже включил себе eventMode "static", снимаем его до applyEnabled.
     // Выделение и drag при этом не страдают: попадание ловит hitArea базового NodeView, а не это поддерево.
     if (interaction === "authoring") this.button.eventMode = "none";
@@ -52,12 +54,24 @@ export class ButtonNodeView extends NodeView {
   }
 
   protected syncContent(node: UINode, transform: UINode["transform"]): void {
-    for (const view of this.stateViews) {
+    if (node.type !== "button") return;
+
+    const normalTexture = this.textures?.get(node.states.normalAssetId);
+    for (const state of BUTTON_STATE_KEYS) {
+      const view = this.stateViews[state];
+      const assetId = node.states[`${state}AssetId`];
+      const texture = (assetId === undefined ? undefined : this.textures?.get(assetId)) ?? normalTexture;
+      // State views are stable Sprite instances: changing an asset must not rebuild the scene
+      // or replace FancyButton's display tree. Set the texture before the layout size: Sprite
+      // preserves scale when its texture changes, so sizing it first would shift its visual bounds
+      // for source images with different dimensions.
+      if (view instanceof Sprite && texture !== undefined && view.texture !== texture) view.texture = texture;
       if (view instanceof Sprite) view.setSize(transform.width, transform.height);
       else if (view instanceof Graphics) view.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
     }
+
     // Только на изменение документа: иначе любой пересчёт layout сбрасывал бы transient preview state.
-    if (node.type === "button" && node.enabled !== this.enabledState) this.applyEnabled(node.enabled);
+    if (node.enabled !== this.enabledState) this.applyEnabled(node.enabled);
   }
 
   get enabled(): boolean {

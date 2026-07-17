@@ -7,12 +7,16 @@ export class ContainerNodeView extends NodeView {
 }
 
 export class ImageNodeView extends NodeView {
-  constructor(texture: Texture | undefined) {
-    super();
+  constructor(assetId: string, textures: ReadonlyMap<string, Texture> | undefined) {
+    super(textures);
+    const texture = this.textureFor(assetId);
     this.setContent(texture !== undefined ? new Sprite(texture) : new Graphics());
   }
 
-  protected syncContent(_node: UINode, transform: UINode["transform"]): void {
+  protected syncContent(node: UINode, transform: UINode["transform"]): void {
+    const texture = node.type === "image" ? this.textureFor(node.assetId) : undefined;
+    // Keep the Sprite and its layout rectangle stable when its image asset changes.
+    if (this.content instanceof Sprite && texture !== undefined && this.content.texture !== texture) this.content.texture = texture;
     if (this.content instanceof Sprite) this.content.setSize(transform.width, transform.height);
     else if (this.content instanceof Graphics) this.content.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
   }
