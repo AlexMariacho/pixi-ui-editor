@@ -4,6 +4,7 @@ import { Container, Texture } from "pixi.js";
 import { ButtonNodeView } from "./ButtonNodeView.js";
 import { ContainerNodeView, ImageNodeView, LayoutGroupNodeView, PrefabInstanceNodeView, TextNodeView } from "./basic.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
+import { ScrollViewNodeView } from "./ScrollViewNodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
 
 export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>): NodeView {
@@ -14,6 +15,8 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
     case "vertical-layout":
     case "grid-layout":
       return new LayoutGroupNodeView(textures);
+    case "scroll-view":
+      return new ScrollViewNodeView(node, textures, interaction);
     case "image":
       return new ImageNodeView(node.assetId, textures);
     case "text":
@@ -50,6 +53,8 @@ export function collectNodeAssetIds(node: UINode): string[] {
       const backgroundAssetId = node.backgroundAssetId;
       return backgroundAssetId === undefined ? [] : [backgroundAssetId];
     }
+    case "scroll-view":
+      return [];
     case "text":
       return node.style?.fontAssetId === undefined ? [] : [node.style.fontAssetId];
   }

@@ -9,6 +9,8 @@ import { NodeView, type SceneInteractionMode } from "./views/NodeView.js";
 import { createNodeView } from "./views/createNodeView.js";
 import { applyLayoutGroup, applyLayoutItem, createGridLineBreak, initializePixiLayout, LayoutItemContainer } from "./layoutGroups.js";
 import { LayoutGroupNodeView } from "./views/basic.js";
+import { ScrollItemContainer } from "./scrollView.js";
+import { ScrollViewNodeView } from "./views/ScrollViewNodeView.js";
 
 export type BuildSceneViewOptions = {
   /** Explicit: an editor canvas must pass "authoring", Preview and the consuming app "runtime". */
@@ -70,6 +72,13 @@ export function buildSceneView(
           const layoutItem = new LayoutItemContainer(childView, onLayout);
           applyLayoutItem(layoutItem, childNode, node, profile);
           view.addLayoutChild(layoutItem);
+        } else if (node.type === "scroll-view" && childNode !== undefined && view instanceof ScrollViewNodeView) {
+          const scrollItem = new ScrollItemContainer(childView, onLayout);
+          // Как и у layout-item: собственный (не растянутый якорями) размер ребёнка — List не
+          // предоставляет per-item override размера, в отличие от Yoga flexGrow/cellSize.
+          const own = resolveProfileTransform(childNode, profile).transform;
+          scrollItem.sync(childNode, profile, { width: own.width, height: own.height });
+          view.addScrollItem(scrollItem);
         } else {
           view.addChild(childView);
         }
@@ -105,6 +114,9 @@ export function updateNodeView(view: Container, node: UINode, profile: LayoutPro
   if (!(view instanceof NodeView)) return;
   if (parentNode !== undefined && isLayoutGroup(parentNode) && view.parent instanceof LayoutItemContainer) {
     applyLayoutItem(view.parent, node, parentNode, profile);
+  } else if (parentNode !== undefined && parentNode.type === "scroll-view" && view.parent instanceof ScrollItemContainer) {
+    const own = resolveProfileTransform(node, profile).transform;
+    view.parent.sync(node, profile, { width: own.width, height: own.height });
   } else {
     view.update(node, profile, parentSize);
   }

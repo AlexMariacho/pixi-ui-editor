@@ -1,10 +1,10 @@
 import { resolveAnchoredTransform, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
-import { createStableId, type GridLayoutSettings, type LayoutProfileId, type LinearLayoutSettings, type UINode } from "@pixi-ui-editor/schema";
+import { createStableId, type GridLayoutSettings, type LayoutProfileId, type LinearLayoutSettings, type ScrollViewSettings, type UINode } from "@pixi-ui-editor/schema";
 import { getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/assets.js";
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
+type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "updateScrollView" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
 export const createNodesSlice: EditorSlice<Keys> = (set) => ({
   setLayoutGroupBackgroundAsset: (nodeId, assetId) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -31,6 +31,13 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     if (node === undefined) return state;
     node.layoutItem = { flexGrow: node.layoutItem?.flexGrow ?? 0, flexShrink: node.layoutItem?.flexShrink ?? 0, ...node.layoutItem, ...patch };
     return commitCandidate(state, candidate, "Layout item update was rejected because it makes the project document invalid.");
+  }),
+  updateScrollView: (nodeId, patch) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((item) => item.id === nodeId);
+    if (node === undefined || node.type !== "scroll-view") return state;
+    node.scrollView = { ...node.scrollView, ...patch };
+    return commitCandidate(state, candidate, "Scroll view update was rejected because it makes the project document invalid.");
   }),
   updateNode: (nodeId, patch) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -175,11 +182,12 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       return state;
     }
 
+    const canHostChildren = (node: UINode | undefined) => node?.type === "container" || node?.type === "horizontal-layout" || node?.type === "vertical-layout" || node?.type === "grid-layout" || node?.type === "scroll-view";
     const selectedNode = target.nodes.find((node) => node.id === state.selectedNodeId);
-    const selectedParent = selectedNode?.type === "container" || selectedNode?.type === "horizontal-layout" || selectedNode?.type === "vertical-layout" || selectedNode?.type === "grid-layout" ? selectedNode : undefined;
+    const selectedParent = canHostChildren(selectedNode) ? selectedNode : undefined;
     const leafParent = selectedNode?.parentId === null || selectedNode?.parentId === undefined
       ? undefined
-      : target.nodes.find((node) => node.id === selectedNode.parentId && (node.type === "container" || node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"));
+      : target.nodes.find((node) => node.id === selectedNode.parentId && canHostChildren(node));
     const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
     const parent = selectedParent ?? leafParent ?? sceneRoot;
     const nodeNumber = candidate.scenes.reduce(
@@ -241,6 +249,9 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     } else if (type === "grid-layout") {
       const layoutGroup: GridLayoutSettings = { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacingX: 0, spacingY: 0, cellWidth: 100, cellHeight: 100, startCorner: "upper-left", startAxis: "horizontal", childAlignment: "upper-left", constraint: "flexible" };
       node = { ...base, type, layoutGroup: { base: layoutGroup } };
+    } else if (type === "scroll-view") {
+      const scrollView: ScrollViewSettings = { direction: "vertical", padding: { left: 0, right: 0, top: 0, bottom: 0 }, itemSpacing: 0, cornerRadius: 0, easingEnabled: true };
+      node = { ...base, type, scrollView };
     } else {
       node = { ...base, type };
     }

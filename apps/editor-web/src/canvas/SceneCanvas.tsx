@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { isLayoutGroup, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
+import { isPositionManagingContainer, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
 import { loadEditorImageAssetSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
@@ -23,6 +23,10 @@ function nodeStructure(node: UINode): unknown[] {
       return [node.id, node.parentId, node.children, node.type, node.assetId, node.animation, node.loop];
     case "prefab-instance":
       return [node.id, node.parentId, node.children, node.type, node.prefabId];
+    case "scroll-view":
+      // padding/itemSpacing/backgroundColor обновляются на живом view (ScrollViewNodeView.syncContent);
+      // у @pixi/ui ScrollBox 2.3.2 нет безопасного публичного API для live-изменения этих полей.
+      return [node.id, node.parentId, node.children, node.type, node.scrollView.direction, node.scrollView.cornerRadius, node.scrollView.easingEnabled, node.scrollView.shiftWheelHorizontal];
     default:
       return [node.id, node.parentId, node.children, node.type];
   }
@@ -141,7 +145,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const { transform } = resolveProfileTransform(node, editorState.activeProfile);
       const parentSize = getParentLayoutSize(owner, node, editorState.activeProfile);
       const resolvedTransform = resolveAnchoredTransform(transform, parentSize);
-      const managedByLayout = node.parentId !== null && isLayoutGroup(nodesById.get(node.parentId) ?? node);
+      const managedByLayout = node.parentId !== null && isPositionManagingContainer(nodesById.get(node.parentId) ?? node);
       const logicalSize = nodeView instanceof NodeView ? nodeView.layoutRectangle : resolvedTransform;
       const pivot = nodeView.toGlobal({
         x: (resolvedTransform.pivotX ?? 0) * logicalSize.width,
@@ -172,7 +176,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
     if (resizeHandles === null || selectedBounds.length !== 1) return;
     const [{ node, bounds }] = selectedBounds;
-    if (node.parentId !== null && isLayoutGroup(nodesById.get(node.parentId) ?? node)) return;
+    if (node.parentId !== null && isPositionManagingContainer(nodesById.get(node.parentId) ?? node)) return;
     if (useEditorStore.getState().activeTool !== "resize") return;
 
     for (const { handle, x, y, cursor } of RESIZE_HANDLES) {
@@ -664,7 +668,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
           }
           if (!state.selectedNodeIds.includes(nodeId)) state.selectNode(nodeId);
           const node = builtNodes.get(nodeId);
-          if (node !== undefined && node.parentId !== null && isLayoutGroup(builtNodes.get(node.parentId) ?? node)) return;
+          if (node !== undefined && node.parentId !== null && isPositionManagingContainer(builtNodes.get(node.parentId) ?? node)) return;
           startDragRef.current?.(nodeId, event);
         });
       }
@@ -842,6 +846,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("horizontal-layout")}>+ Horizontal Layout</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("vertical-layout")}>+ Vertical Layout</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("grid-layout")}>+ Grid Layout</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("scroll-view")}>+ Scroll View</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>

@@ -1,9 +1,9 @@
 import type { StoreApi } from "zustand";
-import type { AssetFile, ButtonStateKey, GridLayoutSettings, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, PrefabDefinition, ProjectDocument, Scene, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
+import type { AssetFile, ButtonStateKey, GridLayoutSettings, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, PrefabDefinition, ProjectDocument, Scene, ScrollViewSettings, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
-export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "image" | "text" | "spine" | "button";
+export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "scroll-view" | "image" | "text" | "spine" | "button";
 
 export type EditorState = {
   document: ProjectDocument;
@@ -35,6 +35,7 @@ export type EditorState = {
   updateLayoutGroup(nodeId: string, patch: Partial<LinearLayoutSettings | GridLayoutSettings>): void;
   updateLayoutItem(nodeId: string, patch: Partial<LayoutItemDefinition>): void;
   setLayoutGroupBackgroundAsset(nodeId: string, assetId: string | undefined): void;
+  updateScrollView(nodeId: string, patch: Partial<ScrollViewSettings>): void;
   setNodeProfileAnchor(nodeId: string, anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;

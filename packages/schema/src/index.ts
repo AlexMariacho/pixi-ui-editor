@@ -45,13 +45,33 @@ const ButtonStates = Type.Object({ normalAssetId: Id, hoverAssetId: Type.Optiona
 const ButtonTransitions = Type.Partial(Type.Object({ normal: ButtonTransition, hover: ButtonTransition, pressed: ButtonTransition, disabled: ButtonTransition }));
 // `enabled` — сериализованное начальное presentation-состояние; runtime setter документ не меняет.
 const Button = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("button"), states: ButtonStates, enabled: Type.Boolean(), transitions: Type.Optional(ButtonTransitions) })]);
-export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance]);
+// Прямые children — scroll items; их позицию владеет `@pixi/ui` List, поэтому per-profile overrides
+// настроек не нужны (как у text style) — только собственные transform/visibility остаются profile-aware.
+const ScrollViewDirection = Type.Union([Type.Literal("vertical"), Type.Literal("horizontal"), Type.Literal("both")]);
+export type ScrollViewDirection = Static<typeof ScrollViewDirection>;
+const ScrollViewSettings = Type.Object({
+  direction: ScrollViewDirection,
+  padding: Padding,
+  itemSpacing: Type.Number({ minimum: 0 }),
+  backgroundColor: Type.Optional(Type.String({ pattern: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" })),
+  cornerRadius: Type.Number({ minimum: 0 }),
+  easingEnabled: Type.Boolean(),
+  // Значим только при direction "horizontal"; для остальных направлений безопасно игнорируется.
+  shiftWheelHorizontal: Type.Optional(Type.Boolean()),
+});
+export type ScrollViewSettings = Static<typeof ScrollViewSettings>;
+const ScrollView = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("scroll-view"), scrollView: ScrollViewSettings })]);
+export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView]);
 export type UINode = Static<typeof UINodeSchema>;
 export type LayoutGroupNode = Extract<UINode, { type: "horizontal-layout" | "vertical-layout" | "grid-layout" }>;
 export function isLayoutGroup(node: UINode): node is LayoutGroupNode { return node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"; }
 export function resolveLayoutGroupSettings<T extends LayoutGroupNode["layoutGroup"]["base"]>(node: LayoutGroupNode, profile: LayoutProfileId): T {
   return { ...node.layoutGroup.base, ...node.layoutGroup.overrides?.[profile] } as T;
 }
+export type ScrollViewNode = Extract<UINode, { type: "scroll-view" }>;
+export function isScrollView(node: UINode): node is ScrollViewNode { return node.type === "scroll-view"; }
+/** A direct child of this node does not own its own position: a layout group's Yoga solver or a scroll-view's `@pixi/ui` List does. */
+export function isPositionManagingContainer(node: UINode): boolean { return isLayoutGroup(node) || isScrollView(node); }
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
 export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
 export type Scene = Static<typeof SceneSchema>;
