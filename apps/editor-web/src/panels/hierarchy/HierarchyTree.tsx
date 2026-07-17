@@ -37,20 +37,47 @@ export function HierarchyTree({ owner, prefabs, selectedNodeIds, implicitRootNod
     setDropTarget(null);
   };
 
+  /** Preserves the on-screen top-to-bottom order of the tree, independent of click/selection order. */
+  const buildTraversalOrder = (): Map<string, number> => {
+    const order = new Map<string, number>();
+    let counter = 0;
+    const visit = (id: string): void => {
+      const node = nodesById.get(id);
+      if (node === undefined) return;
+      order.set(id, counter++);
+      node.children.forEach(visit);
+    };
+    visibleRootNodeIds.forEach(visit);
+    return order;
+  };
+
+  /** When dragging a multi-selected node, moves the whole selection together; descendants of another selected node are dropped since moving their ancestor already carries them along. */
+  const getDragSourceIds = (sourceId: string): string[] => {
+    if (selectedNodeIds.length <= 1 || !selectedNodeIds.includes(sourceId)) return [sourceId];
+    const candidateIds = selectedNodeIds.filter((id) => nodesById.has(id));
+    const topLevelIds = candidateIds.filter((id) => !candidateIds.some((otherId) => otherId !== id && isDescendantOf(id, otherId)));
+    const order = buildTraversalOrder();
+    return topLevelIds.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+  };
+
   const dropOnNode = (event: DragEvent<HTMLButtonElement>, targetNode: UINode, mode: HierarchyDropMode): void => {
     const sourceId = event.dataTransfer.getData(NODE_DRAG_TYPE) || draggedNodeId;
-    if (sourceId === null || !canDrop(sourceId, targetNode, mode)) return;
+    if (sourceId === null) return;
+    const sourceIds = getDragSourceIds(sourceId);
+    if (sourceIds.length === 0 || !sourceIds.every((id) => canDrop(id, targetNode, mode))) return;
     event.preventDefault();
     event.stopPropagation();
 
     if (mode === "inside") {
-      moveNode(sourceId, { parentId: targetNode.id, index: targetNode.children.length });
+      const baseIndex = targetNode.children.length;
+      sourceIds.forEach((id, offset) => moveNode(id, { parentId: targetNode.id, index: baseIndex + offset }));
     } else {
       const siblings = targetNode.parentId === null
         ? owner.rootNodeIds
         : nodesById.get(targetNode.parentId)?.children ?? [];
       const targetIndex = siblings.indexOf(targetNode.id);
-      moveNode(sourceId, { parentId: targetNode.parentId, index: targetIndex + (mode === "after" ? 1 : 0) });
+      const baseIndex = targetIndex + (mode === "after" ? 1 : 0);
+      sourceIds.forEach((id, offset) => moveNode(id, { parentId: targetNode.parentId, index: baseIndex + offset }));
     }
     finishDrag();
   };
@@ -145,12 +172,15 @@ export function HierarchyTree({ owner, prefabs, selectedNodeIds, implicitRootNod
           }}
           onDrop={(event) => {
             const sourceId = event.dataTransfer.getData(NODE_DRAG_TYPE) || draggedNodeId;
+            if (sourceId === null) return;
             event.preventDefault();
             event.stopPropagation();
-            moveNode(sourceId, {
+            const sourceIds = getDragSourceIds(sourceId);
+            const baseIndex = implicitRoot?.children.length ?? owner.rootNodeIds.length;
+            sourceIds.forEach((id, offset) => moveNode(id, {
               parentId: implicitRoot?.id ?? null,
-              index: implicitRoot?.children.length ?? owner.rootNodeIds.length,
-            });
+              index: baseIndex + offset,
+            }));
             finishDrag();
           }}
         >
