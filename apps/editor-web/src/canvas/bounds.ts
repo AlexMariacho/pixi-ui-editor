@@ -1,7 +1,6 @@
-import { resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
+import { NodeView, resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, UINode } from "@pixi-ui-editor/schema";
 import { Container } from "pixi.js";
-import { EMPTY_CONTAINER_GIZMO_SIZE } from "./gizmos.js";
 export type CanvasBounds = { x: number; y: number; width: number; height: number };
 
 export function nodeRectBounds(nodeView: Container, width: number, height: number): CanvasBounds {
@@ -29,40 +28,16 @@ export function displayedBounds(nodeView: Container): CanvasBounds {
 
 export function selectionBounds(
   node: UINode,
-  owner: { nodes: UINode[]; layout?: { referenceViewports: Record<LayoutProfileId, LayoutSize> } },
-  nodesById: ReadonlyMap<string, UINode>,
   nodeViews: ReadonlyMap<string, Container>,
-  profile: LayoutProfileId,
 ): CanvasBounds | undefined {
   const nodeView = nodeViews.get(node.id);
   if (nodeView === undefined || nodeView.destroyed || !nodeView.visible) return undefined;
-
-  // Text's glyph bounds and Spine's animated bounds are content details. Anchors, pivots and
-  // resize handles operate on the stable width/height layout rectangle for both node types.
-  if (node.type === "text" || node.type === "spine" || node.type === "prefab-instance") {
-    const transform = resolveAnchoredTransform(resolveProfileTransform(node, profile).transform, getParentLayoutSize(owner, node, profile));
-    return nodeRectBounds(nodeView, transform.width, transform.height);
+  if (nodeView instanceof NodeView) {
+    const { width, height } = nodeView.layoutRectangle;
+    return nodeRectBounds(nodeView, width, height);
   }
-  if (node.type !== "container") return displayedBounds(nodeView);
-
-  const childBounds = node.children.flatMap((childId) => {
-    const child = nodesById.get(childId);
-    if (child === undefined) return [];
-    const bounds = selectionBounds(child, owner, nodesById, nodeViews, profile);
-    return bounds === undefined ? [] : [bounds];
-  });
-  return unionBounds(childBounds) ?? nodeRectBounds(nodeView, EMPTY_CONTAINER_GIZMO_SIZE, EMPTY_CONTAINER_GIZMO_SIZE);
+  return displayedBounds(nodeView);
 }
-
-export function unionBounds(bounds: readonly CanvasBounds[]): CanvasBounds | undefined {
-  if (bounds.length === 0) return undefined;
-  const left = Math.min(...bounds.map((candidate) => candidate.x));
-  const top = Math.min(...bounds.map((candidate) => candidate.y));
-  const right = Math.max(...bounds.map((candidate) => candidate.x + candidate.width));
-  const bottom = Math.max(...bounds.map((candidate) => candidate.y + candidate.height));
-  return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
 
 export function getParentLayoutSize(owner: { nodes: UINode[]; layout?: { referenceViewports: Record<LayoutProfileId, LayoutSize> } }, node: UINode, profile: LayoutProfileId): LayoutSize | undefined {
   if (node.parentId !== null) {

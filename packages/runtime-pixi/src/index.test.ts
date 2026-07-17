@@ -47,6 +47,9 @@ type NodeBaseFields = Pick<Extract<UINode, { type: "container" }>, "id" | "name"
  */
 const NODE_TYPE_FIXTURES: Record<UINode["type"], (base: NodeBaseFields) => UINode> = {
   container: (base) => ({ ...base, type: "container" }),
+  "horizontal-layout": (base) => ({ ...base, type: "horizontal-layout", layoutGroup: { base: { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacing: 0, childAlignment: "upper-left", reverseOrder: false, controlChildWidth: true, controlChildHeight: true, forceExpandWidth: false, forceExpandHeight: false } } }),
+  "vertical-layout": (base) => ({ ...base, type: "vertical-layout", layoutGroup: { base: { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacing: 0, childAlignment: "upper-left", reverseOrder: false, controlChildWidth: true, controlChildHeight: true, forceExpandWidth: false, forceExpandHeight: false } } }),
+  "grid-layout": (base) => ({ ...base, type: "grid-layout", layoutGroup: { base: { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacingX: 0, spacingY: 0, cellWidth: 20, cellHeight: 20, startCorner: "upper-left", startAxis: "horizontal", childAlignment: "upper-left", constraint: "flexible" } } }),
   image: (base) => ({ ...base, type: "image", assetId: ids.asset }),
   text: (base) => ({ ...base, type: "text", text: "Label" }),
   spine: (base) => ({ ...base, type: "spine", assetId: ids.asset }),

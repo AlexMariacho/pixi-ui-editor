@@ -21,6 +21,9 @@ export abstract class NodeView extends Container {
   protected readonly textures: ReadonlyMap<string, Texture> | undefined;
   /** Node's own grab rectangle in local space, kept equal to its resolved layout rectangle. */
   private readonly grabRect = new Rectangle();
+  /** Authored/computed RectTransform-like rectangle; unlike Pixi bounds it also exists without content. */
+  private layoutWidth = 0;
+  private layoutHeight = 0;
 
   constructor(textures?: ReadonlyMap<string, Texture>) {
     super();
@@ -56,9 +59,7 @@ export abstract class NodeView extends Container {
   /** Syncs type-specific content to the resolved layout rectangle; layout math itself is shared. */
   protected abstract syncContent(node: UINode, transform: UINode["transform"]): void;
 
-  update(node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize): void {
-    const resolved = resolveProfileTransform(node, profile);
-    const transform = resolveAnchoredTransform(resolved.transform, parentSize);
+  private applyResolvedTransform(node: UINode, transform: UINode["transform"], visible: boolean, managedByLayout: boolean): void {
     this.syncContent(node, transform);
 
     const pivotX = (transform.pivotX ?? 0) * transform.width;
@@ -66,15 +67,39 @@ export abstract class NodeView extends Container {
     this.pivot.set(pivotX, pivotY);
     // x/y are the pivot offset from the resolved anchor.  Thus a centred anchor and pivot at
     // zero offsets place the visual centre exactly at the parent's centre.
-    this.position.set(transform.x, transform.y);
+    // A managed child is positioned by its technical Yoga item. Its own NodeView keeps only the
+    // pivot offset inside that computed rectangle; authored x/y and anchors do not participate.
+    this.position.set(managedByLayout ? pivotX : transform.x, managedByLayout ? pivotY : transform.y);
     this.rotation = transform.rotation;
     this.scale.set(transform.scaleX, transform.scaleY);
-    this.visible = resolved.visible;
+    this.visible = visible;
+    this.layoutWidth = transform.width;
+    this.layoutHeight = transform.height;
     // Тот же прямоугольник, что видит пользователь: grab-зона не зависит от содержимого ноды.
     this.grabRect.x = 0;
     this.grabRect.y = 0;
     this.grabRect.width = transform.width;
     this.grabRect.height = transform.height;
+  }
+
+  update(node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize): void {
+    const resolved = resolveProfileTransform(node, profile);
+    this.applyResolvedTransform(node, resolveAnchoredTransform(resolved.transform, parentSize), resolved.visible, false);
+  }
+
+  /** Applies a transient editor rectangle without deriving it from content-dependent Pixi bounds. */
+  preview(node: UINode, transform: UINode["transform"], visible = true): void {
+    this.applyResolvedTransform(node, transform, visible, false);
+  }
+
+  /** Applies the rectangle owned by a direct parent's layout solver. */
+  updateManaged(node: UINode, profile: LayoutProfileId, size: LayoutSize): void {
+    const resolved = resolveProfileTransform(node, profile);
+    this.applyResolvedTransform(node, { ...resolved.transform, x: 0, y: 0, width: size.width, height: size.height }, resolved.visible, true);
+  }
+
+  get layoutRectangle(): LayoutSize {
+    return { width: this.layoutWidth, height: this.layoutHeight };
   }
 
   getSpine(): Spine | undefined {

@@ -1,11 +1,37 @@
 import { resolveAnchoredTransform, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
-import { createStableId, type LayoutProfileId, type UINode } from "@pixi-ui-editor/schema";
+import { createStableId, type GridLayoutSettings, type LayoutProfileId, type LinearLayoutSettings, type UINode } from "@pixi-ui-editor/schema";
 import { getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/assets.js";
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
+type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
 export const createNodesSlice: EditorSlice<Keys> = (set) => ({
+  setLayoutGroupBackgroundAsset: (nodeId, assetId) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((item) => item.id === nodeId);
+    if (node === undefined || (node.type !== "horizontal-layout" && node.type !== "vertical-layout" && node.type !== "grid-layout")) return state;
+    if (assetId === undefined) delete node.backgroundAssetId;
+    else node.backgroundAssetId = assetId;
+    return commitCandidate(state, candidate, "Layout group background update was rejected because it makes the project document invalid.");
+  }),
+  updateLayoutGroup: (nodeId, patch) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((item) => item.id === nodeId);
+    if (node === undefined || (node.type !== "horizontal-layout" && node.type !== "vertical-layout" && node.type !== "grid-layout")) return state;
+    if (state.activeProfile === "desktop") node.layoutGroup.base = { ...node.layoutGroup.base, ...patch } as never;
+    else {
+      node.layoutGroup.overrides ??= {};
+      node.layoutGroup.overrides.mobile = { ...node.layoutGroup.overrides.mobile, ...patch } as never;
+    }
+    return commitCandidate(state, candidate, "Layout group update was rejected because it makes the project document invalid.");
+  }),
+  updateLayoutItem: (nodeId, patch) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const node = getEditingTarget(candidate, state)?.nodes.find((item) => item.id === nodeId);
+    if (node === undefined) return state;
+    node.layoutItem = { flexGrow: node.layoutItem?.flexGrow ?? 0, flexShrink: node.layoutItem?.flexShrink ?? 0, ...node.layoutItem, ...patch };
+    return commitCandidate(state, candidate, "Layout item update was rejected because it makes the project document invalid.");
+  }),
   updateNode: (nodeId, patch) => set((state) => {
     const candidate = structuredClone(state.document);
     const target = getEditingTarget(candidate, state);
@@ -150,10 +176,10 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     }
 
     const selectedNode = target.nodes.find((node) => node.id === state.selectedNodeId);
-    const selectedParent = selectedNode?.type === "container" ? selectedNode : undefined;
+    const selectedParent = selectedNode?.type === "container" || selectedNode?.type === "horizontal-layout" || selectedNode?.type === "vertical-layout" || selectedNode?.type === "grid-layout" ? selectedNode : undefined;
     const leafParent = selectedNode?.parentId === null || selectedNode?.parentId === undefined
       ? undefined
-      : target.nodes.find((node) => node.id === selectedNode.parentId && node.type === "container");
+      : target.nodes.find((node) => node.id === selectedNode.parentId && (node.type === "container" || node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"));
     const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
     const parent = selectedParent ?? leafParent ?? sceneRoot;
     const nodeNumber = candidate.scenes.reduce(
@@ -209,6 +235,12 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       node = { ...base, type, states: { normalAssetId: asset.id }, enabled: true };
     } else if (type === "text") {
       node = { ...base, type, text: "New text", style: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 } };
+    } else if (type === "horizontal-layout" || type === "vertical-layout") {
+      const layoutGroup: LinearLayoutSettings = { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacing: 0, childAlignment: "upper-left", reverseOrder: false, controlChildWidth: true, controlChildHeight: true, forceExpandWidth: false, forceExpandHeight: false };
+      node = { ...base, type, layoutGroup: { base: layoutGroup } };
+    } else if (type === "grid-layout") {
+      const layoutGroup: GridLayoutSettings = { padding: { left: 0, right: 0, top: 0, bottom: 0 }, spacingX: 0, spacingY: 0, cellWidth: 100, cellHeight: 100, startCorner: "upper-left", startAxis: "horizontal", childAlignment: "upper-left", constraint: "flexible" };
+      node = { ...base, type, layoutGroup: { base: layoutGroup } };
     } else {
       node = { ...base, type };
     }

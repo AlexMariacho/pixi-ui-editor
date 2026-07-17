@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
@@ -12,9 +12,23 @@ export type LayoutProfileId = Static<typeof LayoutProfileIdSchema>;
 // дельту к якорному прямоугольнику родителя и могут быть нулевыми или отрицательными.
 // Для нерастянутой оси положительность размера проверяет semantic-валидация (NON_POSITIVE_SIZE).
 const Transform = Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number(), height: Type.Number(), scaleX: Type.Number(), scaleY: Type.Number(), rotation: Type.Number(), pivotX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), pivotY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMinX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMinY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMaxX: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })), anchorMaxY: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })) });
+const Alignment = Type.Union([Type.Literal("upper-left"), Type.Literal("upper-center"), Type.Literal("upper-right"), Type.Literal("middle-left"), Type.Literal("middle-center"), Type.Literal("middle-right"), Type.Literal("lower-left"), Type.Literal("lower-center"), Type.Literal("lower-right")]);
+export type LayoutAlignment = Static<typeof Alignment>;
+const Padding = Type.Object({ left: Type.Number({ minimum: 0 }), right: Type.Number({ minimum: 0 }), top: Type.Number({ minimum: 0 }), bottom: Type.Number({ minimum: 0 }) });
+export type LayoutPadding = Static<typeof Padding>;
+const LayoutItem = Type.Object({ flexGrow: Type.Number({ minimum: 0 }), flexShrink: Type.Number({ minimum: 0 }), flexBasis: Type.Optional(Type.Number({ exclusiveMinimum: 0 })), alignSelf: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("flex-start"), Type.Literal("center"), Type.Literal("flex-end"), Type.Literal("stretch")])) });
+export type LayoutItemDefinition = Static<typeof LayoutItem>;
+const LinearLayoutSettings = Type.Object({ padding: Padding, spacing: Type.Number({ minimum: 0 }), childAlignment: Alignment, reverseOrder: Type.Boolean(), controlChildWidth: Type.Boolean(), controlChildHeight: Type.Boolean(), forceExpandWidth: Type.Boolean(), forceExpandHeight: Type.Boolean() });
+export type LinearLayoutSettings = Static<typeof LinearLayoutSettings>;
+const GridLayoutSettings = Type.Object({ padding: Padding, spacingX: Type.Number({ minimum: 0 }), spacingY: Type.Number({ minimum: 0 }), cellWidth: Type.Number({ exclusiveMinimum: 0 }), cellHeight: Type.Number({ exclusiveMinimum: 0 }), startCorner: Type.Union([Type.Literal("upper-left"), Type.Literal("upper-right"), Type.Literal("lower-left"), Type.Literal("lower-right")]), startAxis: Type.Union([Type.Literal("horizontal"), Type.Literal("vertical")]), childAlignment: Alignment, constraint: Type.Union([Type.Literal("flexible"), Type.Literal("fixed-column-count"), Type.Literal("fixed-row-count")]), constraintCount: Type.Optional(Type.Number({ exclusiveMinimum: 0 })) });
+export type GridLayoutSettings = Static<typeof GridLayoutSettings>;
+const ProfiledLayout = <T extends TSchema>(settings: T) => Type.Object({ base: settings, overrides: Type.Optional(Type.Partial(Type.Object({ desktop: Type.Partial(settings), mobile: Type.Partial(settings) }))) });
 const Override = Type.Object({ visible: Type.Optional(Type.Boolean()), transform: Type.Optional(Type.Partial(Transform)) });
-const NodeBase = Type.Object({ id: Id, name: Name, parentId: Type.Union([Id, Type.Null()]), children: Type.Array(Id), visible: Type.Boolean(), transform: Transform, layoutOverrides: Type.Optional(Type.Partial(Type.Object({ desktop: Override, mobile: Override }))), binding: Type.Optional(Type.String()) });
+const NodeBase = Type.Object({ id: Id, name: Name, parentId: Type.Union([Id, Type.Null()]), children: Type.Array(Id), visible: Type.Boolean(), transform: Transform, layoutOverrides: Type.Optional(Type.Partial(Type.Object({ desktop: Override, mobile: Override }))), layoutItem: Type.Optional(LayoutItem), binding: Type.Optional(Type.String()) });
 const Container = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("container") })]);
+const HorizontalLayout = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("horizontal-layout"), backgroundAssetId: Type.Optional(Id), layoutGroup: ProfiledLayout(LinearLayoutSettings) })]);
+const VerticalLayout = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("vertical-layout"), backgroundAssetId: Type.Optional(Id), layoutGroup: ProfiledLayout(LinearLayoutSettings) })]);
+const GridLayout = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("grid-layout"), backgroundAssetId: Type.Optional(Id), layoutGroup: ProfiledLayout(GridLayoutSettings) })]);
 const Image = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("image"), assetId: Id })]);
 const TextStroke = Type.Object({ color: Type.String({ pattern: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" }), width: Type.Number({ minimum: 0 }) });
 export const TextStyleDefinitionSchema = Type.Object({ fontAssetId: Type.Optional(Id), fontFamily: Type.String({ minLength: 1 }), fontSize: Type.Number({ exclusiveMinimum: 0 }), fontWeight: Type.Union([Type.Literal("normal"), Type.Literal("bold")]), fontStyle: Type.Union([Type.Literal("normal"), Type.Literal("italic")]), fill: Type.String({ pattern: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" }), align: Type.Union([Type.Literal("left"), Type.Literal("center"), Type.Literal("right"), Type.Literal("justify")]), verticalAlign: Type.Union([Type.Literal("top"), Type.Literal("middle"), Type.Literal("bottom")]), wordWrap: Type.Boolean(), breakWords: Type.Boolean(), lineHeight: Type.Optional(Type.Number({ exclusiveMinimum: 0 })), letterSpacing: Type.Number(), stroke: Type.Optional(TextStroke) });
@@ -31,8 +45,13 @@ const ButtonStates = Type.Object({ normalAssetId: Id, hoverAssetId: Type.Optiona
 const ButtonTransitions = Type.Partial(Type.Object({ normal: ButtonTransition, hover: ButtonTransition, pressed: ButtonTransition, disabled: ButtonTransition }));
 // `enabled` — сериализованное начальное presentation-состояние; runtime setter документ не меняет.
 const Button = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("button"), states: ButtonStates, enabled: Type.Boolean(), transitions: Type.Optional(ButtonTransitions) })]);
-export const UINodeSchema = Type.Union([Container, Image, Text, Spine, Button, PrefabInstance]);
+export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance]);
 export type UINode = Static<typeof UINodeSchema>;
+export type LayoutGroupNode = Extract<UINode, { type: "horizontal-layout" | "vertical-layout" | "grid-layout" }>;
+export function isLayoutGroup(node: UINode): node is LayoutGroupNode { return node.type === "horizontal-layout" || node.type === "vertical-layout" || node.type === "grid-layout"; }
+export function resolveLayoutGroupSettings<T extends LayoutGroupNode["layoutGroup"]["base"]>(node: LayoutGroupNode, profile: LayoutProfileId): T {
+  return { ...node.layoutGroup.base, ...node.layoutGroup.overrides?.[profile] } as T;
+}
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
 export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
 export type Scene = Static<typeof SceneSchema>;
@@ -80,10 +99,16 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     node.children.forEach((childId, childIndex) => { const child = nodes.get(childId), childPath = `${nodePath}/children/${childIndex}`; if (!child) add(issues, "MISSING_CHILD_REFERENCE", childPath, `Child '${childId}' does not exist.`); else { const prior = childOwners.get(childId); if (prior && prior !== node.id) add(issues, "MULTIPLE_PARENTS", childPath, `Node '${childId}' belongs to more than one parent.`); childOwners.set(childId, node.id); if (child.parentId !== node.id) add(issues, "HIERARCHY_PARENT_MISMATCH", childPath, `Child '${childId}' does not point back to parent '${node.id}'.`); } });
     if (node.parentId !== null) { const parent = nodes.get(node.parentId); if (parent && !parent.children.includes(node.id)) add(issues, "HIERARCHY_CHILD_MISMATCH", `${nodePath}/parentId`, `Parent '${node.parentId}' does not list node '${node.id}'.`); }
     if (node.type === "image" || node.type === "spine") { const asset = assets.get(node.assetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/assetId`, `Asset '${node.assetId}' does not exist.`); else if (asset.type !== node.type) add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/assetId`, `A ${node.type} node requires a ${node.type} asset.`); }
+    if (isLayoutGroup(node) && node.backgroundAssetId !== undefined) { const asset = assets.get(node.backgroundAssetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, `Background asset '${node.backgroundAssetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, "A layout group background requires an image asset."); }
     // Путь ошибки сохраняется до конкретного state field, чтобы Inspector мог подсветить нужный picker.
     if (node.type === "button") BUTTON_STATE_KEYS.forEach((state) => { const field = `${state}AssetId` as const; const assetId = node.states[field]; if (assetId === undefined) return; const asset = assets.get(assetId), path = `${nodePath}/states/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${assetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, `A button '${state}' state requires an image asset.`); });
     if (node.type === "text" && node.style?.fontAssetId !== undefined) { const asset = assets.get(node.style.fontAssetId), path = `${nodePath}/style/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.style.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "A text node fontAssetId requires a font asset."); }
     if (node.type === "prefab-instance" && !prefabs.has(node.prefabId)) add(issues, "MISSING_PREFAB_REFERENCE", `${nodePath}/prefabId`, `Prefab '${node.prefabId}' does not exist.`);
+    if (node.type === "grid-layout" && node.layoutGroup.base.constraint !== "flexible" && node.layoutGroup.base.constraintCount === undefined) add(issues, "MISSING_GRID_CONSTRAINT_COUNT", `${nodePath}/layoutGroup/base/constraintCount`, "A fixed grid constraint requires constraintCount.");
+    for (const profile of ["desktop", "mobile"] as const) {
+      const grid = node.type === "grid-layout" ? { ...node.layoutGroup.base, ...node.layoutGroup.overrides?.[profile] } : undefined;
+      if (grid !== undefined && grid.constraint !== "flexible" && grid.constraintCount === undefined) add(issues, "MISSING_GRID_CONSTRAINT_COUNT", `${nodePath}/layoutGroup/overrides/${profile}/constraintCount`, "A fixed grid constraint requires constraintCount.");
+    }
     checkResolvedSizes(node, nodePath, issues);
   });
   const visiting = new Set<string>(), visited = new Set<string>(); const visit = (id: string): void => { if (visiting.has(id)) { add(issues, "HIERARCHY_CYCLE", path, `Hierarchy contains a cycle through '${id}'.`); return; } if (visited.has(id)) return; const node = nodes.get(id); if (!node) return; visiting.add(id); node.children.forEach(visit); visiting.delete(id); visited.add(id); }; nodes.forEach((_, id) => visit(id));

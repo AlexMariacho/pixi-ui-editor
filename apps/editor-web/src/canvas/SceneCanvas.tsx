@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
+import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { isLayoutGroup, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
 import { loadEditorImageAssetSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
-import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, EMPTY_CONTAINER_GIZMO_SIZE, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
+import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
 import { ToolPanel, commandTitle } from "../panels/toolbar/ToolPanel.js";
 
 const MIN_ZOOM = 0.05;
@@ -105,10 +105,6 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     spanHeight: number;
     scaleX: number;
     scaleY: number;
-    viewScaleX: number;
-    viewScaleY: number;
-    viewPositionX: number;
-    viewPositionY: number;
     patch: Partial<UINode["transform"]>;
   } | null>(null);
   const startDragRef = useRef<((nodeId: string, event: FederatedPointerEvent) => void) | null>(null);
@@ -139,22 +135,24 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const node = nodesById.get(nodeId);
       const nodeView = nodeViewsRef.current.get(nodeId);
       if (node === undefined || nodeView === undefined) return [];
-      const bounds = selectionBounds(node, owner, nodesById, nodeViewsRef.current, editorState.activeProfile);
+      const bounds = selectionBounds(node, nodeViewsRef.current);
       if (bounds === undefined) return [];
       selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height).stroke({ width: 1.5, color: SELECTION_COLOR });
       const { transform } = resolveProfileTransform(node, editorState.activeProfile);
       const parentSize = getParentLayoutSize(owner, node, editorState.activeProfile);
       const resolvedTransform = resolveAnchoredTransform(transform, parentSize);
+      const managedByLayout = node.parentId !== null && isLayoutGroup(nodesById.get(node.parentId) ?? node);
+      const logicalSize = nodeView instanceof NodeView ? nodeView.layoutRectangle : resolvedTransform;
       const pivot = nodeView.toGlobal({
-        x: (resolvedTransform.pivotX ?? 0) * resolvedTransform.width,
-        y: (resolvedTransform.pivotY ?? 0) * resolvedTransform.height,
+        x: (resolvedTransform.pivotX ?? 0) * logicalSize.width,
+        y: (resolvedTransform.pivotY ?? 0) * logicalSize.height,
       });
       selectionGraphics
         .rect(pivot.x - PIVOT_GIZMO_HALF_SIZE, pivot.y - PIVOT_GIZMO_THICKNESS / 2, PIVOT_GIZMO_HALF_SIZE * 2, PIVOT_GIZMO_THICKNESS)
         .rect(pivot.x - PIVOT_GIZMO_THICKNESS / 2, pivot.y - PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, PIVOT_GIZMO_HALF_SIZE * 2)
         .fill(0xffffff);
       const parentView = nodeView.parent;
-      if (parentView !== null && parentSize !== undefined) {
+      if (!managedByLayout && parentView !== null && parentSize !== undefined) {
         const anchorMinX = transform.anchorMinX ?? 0;
         const anchorMinY = transform.anchorMinY ?? 0;
         const anchorMaxX = transform.anchorMaxX ?? anchorMinX;
@@ -173,26 +171,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     });
 
     if (resizeHandles === null || selectedBounds.length !== 1) return;
-    const [{ node, nodeView, bounds }] = selectedBounds;
-    if (node.type === "container") {
-      const moveHandle = new Graphics()
-        .circle(0, 0, 8)
-        .fill(SELECTION_COLOR)
-        .stroke({ width: 1.5, color: 0xffffff })
-        .moveTo(-4, 0).lineTo(4, 0)
-        .moveTo(0, -4).lineTo(0, 4)
-        .stroke({ width: 1.5, color: 0xffffff });
-      moveHandle.position.set(bounds.x, bounds.y);
-      moveHandle.eventMode = editorState.activeTool === "pan" ? "none" : "static";
-      moveHandle.cursor = "move";
-      moveHandle.on("pointerdown", (event) => {
-        if (event.button !== 0 || useEditorStore.getState().activeTool === "pan") return;
-        event.stopPropagation();
-        startDragRef.current?.(node.id, event);
-      });
-      resizeHandles.addChild(moveHandle);
-      return;
-    }
+    const [{ node, bounds }] = selectedBounds;
+    if (node.parentId !== null && isLayoutGroup(nodesById.get(node.parentId) ?? node)) return;
     if (useEditorStore.getState().activeTool !== "resize") return;
 
     for (const { handle, x, y, cursor } of RESIZE_HANDLES) {
@@ -261,10 +241,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         const state = useEditorStore.getState();
         const owner = getEditingTarget(state.document, state);
         const technicalRootId = state.editingPrefabId === null && owner !== undefined && "layout" in owner ? getSceneRoot(owner)?.id : undefined;
-        const nodesById = new Map(owner?.nodes.map((node) => [node.id, node]) ?? []);
         const selectedIds = owner?.nodes.flatMap((node) => {
           if (node.id === technicalRootId) return [];
-          const bounds = owner === undefined ? undefined : selectionBounds(node, owner, nodesById, nodeViewsRef.current, state.activeProfile);
+          const bounds = selectionBounds(node, nodeViewsRef.current);
           if (bounds === undefined) return [];
           const intersects = bounds.x <= area.x + area.width && bounds.x + bounds.width >= area.x
             && bounds.y <= area.y + area.height && bounds.y + bounds.height >= area.y;
@@ -454,7 +433,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
         const nodeView = nodeViewsRef.current.get(drag.nodeId);
         const parentView = nodeView?.parent;
-        if (nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
+        const state = useEditorStore.getState();
+        const node = getEditingTarget(state.document, state)?.nodes.find((candidate) => candidate.id === drag.nodeId);
+        if (node === undefined || nodeView === undefined || nodeView.destroyed || parentView === null || parentView === undefined) return;
 
         const position = parentView.toLocal(event.global);
         const deltaX = position.x - drag.startX;
@@ -477,14 +458,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         for (const key of Object.keys(patch) as (keyof UINode["transform"])[]) {
           patch[key] = roundTransformValue(patch[key]!);
         }
-        nodeView.scale.set(
-          drag.viewScaleX * (patch.width ?? drag.transform.width) / drag.transform.width,
-          drag.viewScaleY * (patch.height ?? drag.transform.height) / drag.transform.height,
-        );
-        nodeView.position.set(
-          drag.viewPositionX + (patch.x ?? drag.transform.x) - drag.transform.x,
-          drag.viewPositionY + (patch.y ?? drag.transform.y) - drag.transform.y,
-        );
+        if (nodeView instanceof NodeView) {
+          previewNodeView(nodeView, node, state.activeProfile, { ...drag.transform, ...patch });
+        }
         resizeDragRef.current = { ...drag, patch };
         redrawSelectionRef.current();
       };
@@ -512,12 +488,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
           anchorOffsetY: transform.y - stored.y,
           spanWidth: transform.width - stored.width,
           spanHeight: transform.height - stored.height,
-          scaleX: nodeView.width / transform.width,
-          scaleY: nodeView.height / transform.height,
-          viewScaleX: nodeView.scale.x,
-          viewScaleY: nodeView.scale.y,
-          viewPositionX: nodeView.position.x,
-          viewPositionY: nodeView.position.y,
+          scaleX: nodeView.scale.x,
+          scaleY: nodeView.scale.y,
           patch: {},
         };
         application.stage.on("pointermove", moveResizedNode);
@@ -672,8 +644,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const builtScene = buildDocument.scenes.find((candidate) => candidate.id === sceneId);
       if (builtScene === undefined) return;
       // Editor canvas — authoring-поверхность: контролы не перехватывают selection и drag.
-      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, { interaction: "authoring", textures, spines, fonts });
+      const { root, nodeViews } = buildSceneView(buildDocument, sceneId, activeProfile, { interaction: "authoring", textures, spines, fonts, onLayout: () => redrawSelectionRef.current() });
       const technicalRootNodeId = editingPrefabName === null ? getSceneRoot(builtScene)?.id : undefined;
+      const builtNodes = new Map(builtScene.nodes.map((node) => [node.id, node]));
       for (const [nodeId, nodeView] of nodeViews) {
         if (nodeId === technicalRootNodeId) {
           nodeView.eventMode = "passive";
@@ -690,6 +663,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
             return;
           }
           if (!state.selectedNodeIds.includes(nodeId)) state.selectNode(nodeId);
+          const node = builtNodes.get(nodeId);
+          if (node !== undefined && node.parentId !== null && isLayoutGroup(builtNodes.get(node.parentId) ?? node)) return;
           startDragRef.current?.(nodeId, event);
         });
       }
@@ -748,11 +723,12 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     if (application === null || viewMode !== "single") return;
     const scene = document.scenes.find((candidate) => candidate.id === sceneId);
     if (scene === undefined) return;
+    const nodesById = new Map(scene.nodes.map((node) => [node.id, node]));
 
     for (const node of scene.nodes) {
       const view = nodeViewsRef.current.get(node.id);
       if (view === undefined || view.destroyed) continue;
-      updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile));
+      updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId));
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);
@@ -772,10 +748,11 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
       const scene = document.scenes.find((candidate) => candidate.id === sceneId);
       if (scene === undefined) return;
+      const nodesById = new Map(scene.nodes.map((node) => [node.id, node]));
       for (const node of scene.nodes) {
         const view = nodeViewsRef.current.get(node.id);
         if (view !== undefined && !view.destroyed) {
-          updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile));
+          updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId));
         }
       }
     }).catch((error: unknown) => {
@@ -862,6 +839,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         </button>
         <span className="canvas-toolbar-divider" aria-hidden="true" />
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("container")}>+ Container</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("horizontal-layout")}>+ Horizontal Layout</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("vertical-layout")}>+ Vertical Layout</button>
+        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("grid-layout")}>+ Grid Layout</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
         <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
         <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>

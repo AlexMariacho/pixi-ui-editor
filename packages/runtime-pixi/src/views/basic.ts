@@ -6,6 +6,37 @@ export class ContainerNodeView extends NodeView {
   protected syncContent(): void {}
 }
 
+/** Layout groups may optionally paint one image behind their managed children. No asset means no content/view at all. */
+export class LayoutGroupNodeView extends NodeView {
+  private readonly layoutContent = new Container();
+  private background?: Sprite;
+
+  constructor(textures: ReadonlyMap<string, Texture> | undefined) {
+    super(textures);
+    // Yoga owns this inner container only. The NodeView itself retains the authored transform,
+    // pivot and grab rectangle used by both editor gizmos and runtime interaction.
+    super.addChild(this.layoutContent);
+  }
+
+  get layoutTarget(): Container { return this.layoutContent; }
+
+  addLayoutChild<T extends Container[]>(...children: T): T[0] {
+    return this.layoutContent.addChild(...children);
+  }
+
+  protected syncContent(node: UINode, transform: UINode["transform"]): void {
+    if (node.type !== "horizontal-layout" && node.type !== "vertical-layout" && node.type !== "grid-layout") return;
+    const texture = node.backgroundAssetId === undefined ? undefined : this.textureFor(node.backgroundAssetId);
+    if (texture === undefined) {
+      if (this.background !== undefined) { super.removeChild(this.background); this.background.destroy(); this.background = undefined; }
+      return;
+    }
+    if (this.background === undefined) { this.background = new Sprite(texture); super.addChildAt(this.background, 0); }
+    else if (this.background.texture !== texture) this.background.texture = texture;
+    this.background.setSize(transform.width, transform.height);
+  }
+}
+
 export class ImageNodeView extends NodeView {
   constructor(assetId: string, textures: ReadonlyMap<string, Texture> | undefined) {
     super(textures);

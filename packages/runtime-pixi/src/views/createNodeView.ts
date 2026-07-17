@@ -2,7 +2,7 @@ import { BUTTON_STATE_KEYS, type UINode } from "@pixi-ui-editor/schema";
 import { type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 import { Container, Texture } from "pixi.js";
 import { ButtonNodeView } from "./ButtonNodeView.js";
-import { ContainerNodeView, ImageNodeView, PrefabInstanceNodeView, TextNodeView } from "./basic.js";
+import { ContainerNodeView, ImageNodeView, LayoutGroupNodeView, PrefabInstanceNodeView, TextNodeView } from "./basic.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
 
@@ -10,6 +10,10 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
   switch (node.type) {
     case "container":
       return new ContainerNodeView();
+    case "horizontal-layout":
+    case "vertical-layout":
+    case "grid-layout":
+      return new LayoutGroupNodeView(textures);
     case "image":
       return new ImageNodeView(node.assetId, textures);
     case "text":
@@ -40,6 +44,12 @@ export function collectNodeAssetIds(node: UINode): string[] {
     case "container":
     case "prefab-instance":
       return [];
+    case "horizontal-layout":
+    case "vertical-layout":
+    case "grid-layout": {
+      const backgroundAssetId = node.backgroundAssetId;
+      return backgroundAssetId === undefined ? [] : [backgroundAssetId];
+    }
     case "text":
       return node.style?.fontAssetId === undefined ? [] : [node.style.fontAssetId];
   }

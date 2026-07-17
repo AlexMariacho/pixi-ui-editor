@@ -5,7 +5,6 @@ export const ARTBOARD_BORDER = 0x3c3c50;
 export const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
-export const EMPTY_CONTAINER_GIZMO_SIZE = 100;
 export const PIVOT_GIZMO_HALF_SIZE = 6;
 export const PIVOT_GIZMO_THICKNESS = 2;
 export const ANCHOR_GIZMO_GAP = 2;
