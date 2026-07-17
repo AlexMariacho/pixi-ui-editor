@@ -159,7 +159,21 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       (count, candidateScene) => count + candidateScene.nodes.filter((node) => node.type === type).length,
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
     ) + 1;
-    const transform = { x: 50, y: 50, width: type === "spine" ? 200 : 100, height: type === "spine" ? 200 : 100, scaleX: 1, scaleY: 1, rotation: 0 };
+    const transform = {
+      x: 0,
+      y: 0,
+      width: type === "spine" ? 200 : 100,
+      height: type === "spine" ? 200 : 100,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      anchorMinX: 0.5,
+      anchorMaxX: 0.5,
+      anchorMinY: 0.5,
+      anchorMaxY: 0.5,
+      pivotX: 0.5,
+      pivotY: 0.5,
+    };
     const base = {
       id: createStableId(),
       name: `${type[0]!.toUpperCase()}${type.slice(1)} ${nodeNumber}`,
@@ -204,7 +218,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
 
     return commitCandidate(state, candidate, "Node creation was rejected because it makes the project document invalid.");
   }),
-  addNodeFromAsset: (assetId, position) => set((state) => {
+  addNodeFromAsset: (assetId, _position) => set((state) => {
     const candidate = structuredClone(state.document);
     const target = getEditingTarget(candidate, state);
     const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
@@ -226,7 +240,21 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       parentId: sceneRoot?.id ?? null,
       children: [],
       visible: true,
-      transform: { x: position.x, y: position.y, width, height, scaleX: 1, scaleY: 1, rotation: 0 },
+      transform: {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        anchorMinX: 0.5,
+        anchorMaxX: 0.5,
+        anchorMinY: 0.5,
+        anchorMaxY: 0.5,
+        pivotX: 0.5,
+        pivotY: 0.5,
+      },
     };
     target.nodes.push(node);
     if (sceneRoot === undefined) target.rootNodeIds.push(node.id);

@@ -44,7 +44,20 @@ describe("prefabs", () => {
     const prefabId = useEditorStore.getState().document.prefabs.at(-1)!.id;
     useEditorStore.getState().addPrefabInstance(prefabId, { x: 10, y: 20 });
     const instanceNode = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
-    expect(instanceNode).toMatchObject({ type: "prefab-instance", prefabId });
+    expect(instanceNode).toMatchObject({
+      type: "prefab-instance",
+      prefabId,
+      transform: {
+        x: 0,
+        y: 0,
+        anchorMinX: 0.5,
+        anchorMaxX: 0.5,
+        anchorMinY: 0.5,
+        anchorMaxY: 0.5,
+        pivotX: 0.5,
+        pivotY: 0.5,
+      },
+    });
     const beforeRejectedCreation = structuredClone(useEditorStore.getState().document);
 
     const error = useEditorStore.getState().createPrefabFromNode(instanceNode.id);

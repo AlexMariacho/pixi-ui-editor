@@ -97,7 +97,7 @@ describe("setNodeProfileAnchor", () => {
 
     useEditorStore.getState().setNodeProfileAnchor(imageNodeId, { minX: 1, maxX: 1, minY: 1, maxY: 1 }, { setPivot: true, snap: true });
     transform = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.transform;
-    expect(transform).toMatchObject({ anchorMinX: 1, anchorMaxX: 1, anchorMinY: 1, anchorMaxY: 1, pivotX: 1, pivotY: 1, x: -before.width, y: -before.height });
+    expect(transform).toMatchObject({ anchorMinX: 1, anchorMaxX: 1, anchorMinY: 1, anchorMaxY: 1, pivotX: 1, pivotY: 1, x: 0, y: 0 });
     expect(useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === imageNodeId)!.layoutOverrides?.mobile?.transform).toMatchObject({
       ...mobileBefore,
       anchorMinX: 0,

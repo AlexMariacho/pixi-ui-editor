@@ -73,7 +73,23 @@ describe("addNodeFromAsset", () => {
     const scene = useEditorStore.getState().document.scenes[0]!;
     const node = scene.nodes.at(-1)!;
     const rootNodeId = scene.rootNodeIds[0]!;
-    expect(node).toMatchObject({ type: "spine", assetId: asset.id, parentId: rootNodeId, transform: { x: 123.45, y: 67.89, width: 200, height: 200 } });
+    expect(node).toMatchObject({
+      type: "spine",
+      assetId: asset.id,
+      parentId: rootNodeId,
+      transform: {
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        anchorMinX: 0.5,
+        anchorMaxX: 0.5,
+        anchorMinY: 0.5,
+        anchorMaxY: 0.5,
+        pivotX: 0.5,
+        pivotY: 0.5,
+      },
+    });
     expect(scene.nodes.find((candidate) => candidate.id === rootNodeId)?.children).toContain(node.id);
     expect(useEditorStore.getState().selectedNodeId).toBe(node.id);
   });

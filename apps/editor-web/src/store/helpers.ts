@@ -105,8 +105,8 @@ export function createAnchorPatch(
     const snapPoint = snapPointInParent ?? { x: anchor.minX * parentSize.width, y: anchor.minY * parentSize.height };
     if (spanX > 0) patch.width = 0;
     if (spanY > 0) patch.height = 0;
-    patch.x = spanX > 0 ? 0 : snapPoint.x - anchor.minX * parentSize.width - nextPivotX * renderedWidth;
-    patch.y = spanY > 0 ? 0 : snapPoint.y - anchor.minY * parentSize.height - nextPivotY * renderedHeight;
+    patch.x = spanX > 0 ? 0 : snapPoint.x - anchor.minX * parentSize.width;
+    patch.y = spanY > 0 ? 0 : snapPoint.y - anchor.minY * parentSize.height;
     return patch;
   }
 
@@ -124,8 +124,8 @@ export function createAnchorPatch(
     const b = sine * transform.scaleX;
     const c = -sine * transform.scaleY;
     const d = cosine * transform.scaleY;
-    x += oldPivotX - a * oldPivotX - c * oldPivotY - newPivotX + a * newPivotX + c * newPivotY;
-    y += oldPivotY - b * oldPivotX - d * oldPivotY - newPivotY + b * newPivotX + d * newPivotY;
+    x += a * (newPivotX - oldPivotX) + c * (newPivotY - oldPivotY);
+    y += b * (newPivotX - oldPivotX) + d * (newPivotY - oldPivotY);
   }
   patch.x = x;
   patch.y = y;

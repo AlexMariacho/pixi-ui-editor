@@ -92,7 +92,7 @@ export const createPrefabsSlice: EditorSlice<Keys> = (set) => ({
     });
     return error;
   },
-  addPrefabInstance: (prefabId, position) => set((state) => {
+  addPrefabInstance: (prefabId, _position) => set((state) => {
     if (state.editingPrefabId !== null) {
       console.warn("A preset instance cannot be added while a preset is being edited: nested presets are not supported.");
       return state;
@@ -116,7 +116,21 @@ export const createPrefabsSlice: EditorSlice<Keys> = (set) => ({
       parentId: sceneRoot?.id ?? null,
       children: [],
       visible: true,
-      transform: { x: position.x, y: position.y, width: boundingBox.width, height: boundingBox.height, scaleX: 1, scaleY: 1, rotation: 0 },
+      transform: {
+        x: 0,
+        y: 0,
+        width: boundingBox.width,
+        height: boundingBox.height,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        anchorMinX: 0.5,
+        anchorMaxX: 0.5,
+        anchorMinY: 0.5,
+        anchorMaxY: 0.5,
+        pivotX: 0.5,
+        pivotY: 0.5,
+      },
     };
     scene.nodes.push(node);
     if (sceneRoot === undefined) scene.rootNodeIds.push(node.id);

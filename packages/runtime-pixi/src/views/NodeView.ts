@@ -53,7 +53,9 @@ export abstract class NodeView extends Container {
     const pivotX = (transform.pivotX ?? 0) * transform.width;
     const pivotY = (transform.pivotY ?? 0) * transform.height;
     this.pivot.set(pivotX, pivotY);
-    this.position.set(transform.x + pivotX, transform.y + pivotY);
+    // x/y are the pivot offset from the resolved anchor.  Thus a centred anchor and pivot at
+    // zero offsets place the visual centre exactly at the parent's centre.
+    this.position.set(transform.x, transform.y);
     this.rotation = transform.rotation;
     this.scale.set(transform.scaleX, transform.scaleY);
     this.visible = resolved.visible;

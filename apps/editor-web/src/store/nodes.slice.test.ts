@@ -14,7 +14,22 @@ describe("addNode", () => {
     const scene = document.scenes[0]!;
     const addedNode = scene.nodes.find((node) => !initialDocument.scenes[0]!.nodes.some((initialNode) => initialNode.id === node.id));
 
-    expect(addedNode).toMatchObject({ type: "text", name: "Text 2", parentId: rootNodeId, text: "New text" });
+    expect(addedNode).toMatchObject({
+      type: "text",
+      name: "Text 2",
+      parentId: rootNodeId,
+      text: "New text",
+      transform: {
+        x: 0,
+        y: 0,
+        anchorMinX: 0.5,
+        anchorMaxX: 0.5,
+        anchorMinY: 0.5,
+        anchorMaxY: 0.5,
+        pivotX: 0.5,
+        pivotY: 0.5,
+      },
+    });
     expect(scene.nodes.find((node) => node.id === rootNodeId)?.children).toContain(addedNode?.id);
     expect(validateProjectDocument(document).valid).toBe(true);
   });

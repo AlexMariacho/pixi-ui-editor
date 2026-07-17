@@ -68,8 +68,8 @@ export function localTransformMatrix(transform: UINode["transform"]): AffineTran
     b,
     c,
     d,
-    tx: transform.x + pivotX - a * pivotX - c * pivotY,
-    ty: transform.y + pivotY - b * pivotX - d * pivotY,
+    tx: transform.x - a * pivotX - c * pivotY,
+    ty: transform.y - b * pivotX - d * pivotY,
   };
 }
 
@@ -135,8 +135,8 @@ export function transformRelativeToParent(
   const pivotY = (source.pivotY ?? 0) * source.height;
   return {
     ...source,
-    x: local.tx - pivotX + local.a * pivotX + local.c * pivotY,
-    y: local.ty - pivotY + local.b * pivotX + local.d * pivotY,
+    x: local.tx + local.a * pivotX + local.c * pivotY,
+    y: local.ty + local.b * pivotX + local.d * pivotY,
     scaleX,
     scaleY,
     rotation,

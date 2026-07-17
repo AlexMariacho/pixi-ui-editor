@@ -86,8 +86,6 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       startY: number;
       x: number;
       y: number;
-      pivotX: number;
-      pivotY: number;
       anchorOffsetX: number;
       anchorOffsetY: number;
     }[];
@@ -363,7 +361,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         // drag.x/y — это view.position (= anchor + transform + pivot), поэтому перед коммитом layout-офсеты вычитаем.
         const updates = drag.entries.flatMap((entry) => entry.x === entry.startX && entry.y === entry.startY
           ? []
-          : [{ nodeId: entry.nodeId, patch: { x: entry.x - entry.pivotX - entry.anchorOffsetX, y: entry.y - entry.pivotY - entry.anchorOffsetY } }]);
+          : [{ nodeId: entry.nodeId, patch: { x: entry.x - entry.anchorOffsetX, y: entry.y - entry.anchorOffsetY } }]);
         useEditorStore.getState().updateNodeProfileTransforms(updates);
       };
       const moveDraggedNode = (event: FederatedPointerEvent) => {
@@ -417,8 +415,6 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
             startY: nodeView.position.y,
             x: nodeView.position.x,
             y: nodeView.position.y,
-            pivotX: nodeView.pivot.x,
-            pivotY: nodeView.pivot.y,
             anchorOffsetX: (transform.anchorMinX ?? 0) * (parentSize?.width ?? 0),
             anchorOffsetY: (transform.anchorMinY ?? 0) * (parentSize?.height ?? 0),
           }];

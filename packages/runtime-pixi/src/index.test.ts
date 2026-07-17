@@ -128,18 +128,38 @@ describe("sample project loader smoke test", () => {
 
     const anchoredDocument = clone(document);
     const anchoredNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
-    anchoredNode.transform = { ...anchoredNode.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: -anchoredNode.transform.width };
+    anchoredNode.transform = { ...anchoredNode.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: 0 };
     const anchoredView = buildSceneView(anchoredDocument, ids.scene, "desktop", { interaction: "authoring", textures: new Map([[ids.asset, Texture.WHITE]]) }).nodeViews.get(ids.image)!;
     const anchoredSprite = anchoredView.children[0] as Sprite;
     const renderedRight = anchoredView.position.x + (anchoredSprite.width - anchoredView.pivot.x) * anchoredView.scale.x;
     expect(renderedRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.desktop.width);
 
     const mobileNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
-    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: -320 };
+    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: 0 };
     const mobileView = buildSceneView(anchoredDocument, ids.scene, "mobile", { interaction: "authoring", textures: new Map([[ids.asset, Texture.WHITE]]) }).nodeViews.get(ids.image)!;
     const mobileSprite = mobileView.children[0] as Sprite;
     const mobileRight = mobileView.position.x + (mobileSprite.width - mobileView.pivot.x) * mobileView.scale.x;
     expect(mobileRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.mobile.width);
+  });
+
+  it("places a zero-offset centred pivot at the centre of its parent", () => {
+    const document = parseProjectDocumentJson(sampleJson);
+    const imageNode = document.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
+    imageNode.transform = {
+      ...imageNode.transform,
+      x: 0,
+      y: 0,
+      anchorMinX: 0.5,
+      anchorMaxX: 0.5,
+      anchorMinY: 0.5,
+      anchorMaxY: 0.5,
+      pivotX: 0.5,
+      pivotY: 0.5,
+    };
+
+    const imageView = buildSceneView(document, ids.scene, "desktop", { interaction: "authoring" }).nodeViews.get(ids.image)!;
+    const viewport = document.scenes[0]!.layout.referenceViewports.desktop;
+    expect(imageView.position).toMatchObject({ x: viewport.width / 2, y: viewport.height / 2 });
   });
 
   it("gives every node type the same grab rectangle, whatever it renders", () => {
