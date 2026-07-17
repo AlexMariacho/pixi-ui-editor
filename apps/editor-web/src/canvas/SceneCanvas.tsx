@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
-import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store.js";
+import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
 import { loadEditorSceneSpines, loadEditorSceneTextures } from "../assets.js";
 import { PREFAB_DRAG_TYPE } from "../PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../editorCommands.js";

@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from "react";
-import { useEditorStore } from "./store.js";
+import { useEditorStore } from "./store/index.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
 import { FloatingWindow } from "./FloatingWindow.js";
 

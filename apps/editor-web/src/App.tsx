@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ProjectDocument } from "@pixi-ui-editor/schema";
-import { getSceneRoot, useEditorStore } from "./store.js";
+import { getSceneRoot, useEditorStore } from "./store/index.js";
 import { Inspector } from "./Inspector.js";
 import { resolveFileUrl } from "./assets.js";
 import { downloadProjectPackage } from "./exportPackage.js";

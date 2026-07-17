@@ -6,8 +6,8 @@ import {
   editorCommandRegistry,
   type EditorKeyBindings,
 } from "./editorCommands.js";
-import { useEditorStore } from "./store.js";
-import { imageNodeId, initialDocument } from "./store.test-utils.js";
+import { useEditorStore } from "./store/index.js";
+import { imageNodeId, initialDocument } from "./store/test-utils.js";
 
 const keyboardEvent = (key: string) => ({
   key,

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ProjectDocument } from "@pixi-ui-editor/schema";
-import { useEditorStore } from "../../store.js";
+import { useEditorStore } from "../../store/index.js";
 export function WindowsSection({ document, sceneId, editingPrefab }: { document: ProjectDocument; sceneId: string | null; editingPrefab: boolean }) {
   const selectScene = useEditorStore((state) => state.selectScene);
   const addScene = useEditorStore((state) => state.addScene);

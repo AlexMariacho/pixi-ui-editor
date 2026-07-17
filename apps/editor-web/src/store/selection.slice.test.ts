@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { useEditorStore } from "./store.js";
-import { imageNodeId, textNodeId } from "./store.test-utils.js";
+import { useEditorStore } from "./index.js";
+import { imageNodeId, textNodeId } from "./test-utils.js";
 
 describe("node selection", () => {
   it("replaces, adds, toggles, and clears selected nodes while keeping the last selected node primary", () => {

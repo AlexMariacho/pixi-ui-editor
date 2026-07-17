@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { ProjectDocument, UINode } from "@pixi-ui-editor/schema";
-import { useEditorStore } from "../../store.js";
+import { useEditorStore } from "../../store/index.js";
 import { NODE_DRAG_TYPE } from "../../PresetsPanel.js";
 export type HierarchyDropMode = "before" | "inside" | "after";
 

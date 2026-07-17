@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
-import { useEditorStore } from "./store.js";
-import { getNodeWorldMatrix } from "./canvas/transformCoordinates.js";
-import { imageNodeId, initialDocument, textNodeId } from "./store.test-utils.js";
+import { useEditorStore } from "./index.js";
+import { getNodeWorldMatrix } from "../canvas/transformCoordinates.js";
+import { imageNodeId, initialDocument, textNodeId } from "./test-utils.js";
 
 describe("scenes", () => {
   it("addScene creates a valid document with two windows and activates the new one", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { validateProjectDocument } from "@pixi-ui-editor/schema";
-import { useEditorStore } from "./store.js";
-import { initialDocument, textNodeId } from "./store.test-utils.js";
+import { useEditorStore } from "./index.js";
+import { initialDocument, textNodeId } from "./test-utils.js";
 
 describe("prefabs", () => {
   it("createPrefabFromNode creates a valid preset copy and replaces the source subtree with its preset instance", () => {

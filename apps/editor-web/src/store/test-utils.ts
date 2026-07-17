@@ -1,5 +1,5 @@
 import { afterEach, vi } from "vitest";
-import { useEditorStore } from "./store.js";
+import { useEditorStore } from "./index.js";
 
 export const initialDocument = structuredClone(useEditorStore.getState().document);
 export const imageNodeId = "10000000-0000-4000-8000-000000000004";

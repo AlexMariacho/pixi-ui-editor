@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { getEditingTarget, useEditorStore, type AnchorRect } from "./store.js";
+import { getEditingTarget, useEditorStore, type AnchorRect } from "./store/index.js";
 import { loadEditorSceneSpines } from "./assets.js";
 import { getNodeWorldMatrix } from "./canvas/transformCoordinates.js";
 

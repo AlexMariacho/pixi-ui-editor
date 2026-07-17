@@ -3,7 +3,7 @@ import type { Asset, AssetFile } from "@pixi-ui-editor/schema";
 import { Application } from "pixi.js";
 import { collectNodeAssetIds, createSpineView, loadSpineAsset, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { clearEditorSpineCache, resolveAssetUrl, resolveFileUrl } from "./assets.js";
-import { useEditorStore } from "./store.js";
+import { useEditorStore } from "./store/index.js";
 import { useUiPrefsStore } from "./uiPrefs.js";
 import { FloatingWindow } from "./FloatingWindow.js";
 

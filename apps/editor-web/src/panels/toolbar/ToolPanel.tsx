@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { EditorTool, ViewMode } from "../../store.js";
+import type { EditorTool, ViewMode } from "../../store/index.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry, type EditorCommandId } from "../../editorCommands.js";
 export function ToolPanel({ activeTool, viewMode }: { activeTool: EditorTool; viewMode: ViewMode }) {
   const tools: readonly { tool: EditorTool; commandId: EditorCommandId; icon: ReactNode }[] = [
