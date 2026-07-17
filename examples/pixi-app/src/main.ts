@@ -1,10 +1,24 @@
-import { loadSceneView, parseProjectDocumentJson, resolveProfileForViewport } from "@pixi-ui-editor/runtime-pixi";
+import {
+  ButtonNodeView,
+  InputNodeView,
+  loadSceneView,
+  parseProjectDocumentJson,
+  ProgressBarNodeView,
+  resolveProfileForViewport,
+  SliderNodeView,
+} from "@pixi-ui-editor/runtime-pixi";
 import type { ProjectDocument, Scene } from "@pixi-ui-editor/schema";
 import { Application, Container } from "pixi.js";
 import "./styles.css";
 
 const PACKAGE_ROOT = "./package/";
-const resolvePackageFileUrl = (uri: string) => `${PACKAGE_ROOT}${uri}`;
+const resolvePackageFileUrl = (uri: string) => uri.startsWith("data:") ? uri : `${PACKAGE_ROOT}${uri}`;
+const CONTROL_IDS = {
+  reset: "10000000-0000-4000-8000-000000000021",
+  input: "10000000-0000-4000-8000-000000000031",
+  slider: "10000000-0000-4000-8000-000000000032",
+  progress: "10000000-0000-4000-8000-000000000033",
+} as const;
 
 function showHint(lines: string[]): void {
   const overlay = document.createElement("div");
@@ -46,6 +60,23 @@ function pickScene(projectDocument: ProjectDocument): Scene | undefined {
   return projectDocument.scenes.find((scene) => scene.id === requested || scene.name === requested);
 }
 
+function createRuntimeStatus(): { element: HTMLElement; show(message: string): void } {
+  const element = document.createElement("output");
+  element.className = "runtime-status";
+  document.body.appendChild(element);
+  return {
+    element,
+    show(message) { element.textContent = message; },
+  };
+}
+
+function findControl<T extends Container>(scene: Scene, nodeViews: ReadonlyMap<string, Container>, binding: string, stableId: string, expected: new (...args: never[]) => T): T {
+  const node = scene.nodes.find((candidate) => candidate.binding === binding) ?? scene.nodes.find((candidate) => candidate.id === stableId);
+  const view = node === undefined ? undefined : nodeViews.get(node.id);
+  if (!(view instanceof expected)) throw new Error(`The sample package does not expose '${binding}' as ${expected.name}.`);
+  return view;
+}
+
 async function main(): Promise<void> {
   let projectDocument: ProjectDocument | undefined;
   try {
@@ -74,6 +105,9 @@ async function main(): Promise<void> {
   const app = new Application();
   await app.init({ resizeTo: window, background: 0x101018, antialias: true });
   document.body.appendChild(app.canvas);
+  const status = createRuntimeStatus();
+  const runtimeState = { name: "Designer", energy: 48 };
+  status.show(`${runtimeState.name} · energy ${runtimeState.energy}`);
 
   let profile = resolveProfileForViewport(packageDocument.settings, window.innerWidth, window.innerHeight);
   let sceneRoot: Container | null = null;
@@ -90,11 +124,38 @@ async function main(): Promise<void> {
 
   const rebuildScene = async () => {
     const token = ++buildToken;
-    const { root } = await loadSceneView(packageDocument, scene.id, profile, resolvePackageFileUrl, { interaction: "runtime" });
+    const { root, nodeViews } = await loadSceneView(packageDocument, scene.id, profile, resolvePackageFileUrl, { interaction: "runtime" });
     if (token !== buildToken) {
       root.destroy({ children: true });
       return;
     }
+    const reset = findControl(scene, nodeViews, "controls.reset", CONTROL_IDS.reset, ButtonNodeView);
+    const input = findControl(scene, nodeViews, "controls.playerName", CONTROL_IDS.input, InputNodeView);
+    const slider = findControl(scene, nodeViews, "controls.energy", CONTROL_IDS.slider, SliderNodeView);
+    const progress = findControl(scene, nodeViews, "display.energy", CONTROL_IDS.progress, ProgressBarNodeView);
+
+    input.value = runtimeState.name;
+    slider.value = runtimeState.energy;
+    progress.progress = runtimeState.energy;
+    input.onChange.connect((value) => {
+      runtimeState.name = value;
+      status.show(`${runtimeState.name || "Anonymous"} · energy ${runtimeState.energy}`);
+    });
+    input.onEnter.connect((value) => status.show(`Entered: ${value || "Anonymous"} · energy ${runtimeState.energy}`));
+    slider.onUpdate.connect((value) => {
+      runtimeState.energy = value;
+      progress.progress = value;
+      status.show(`${runtimeState.name || "Anonymous"} · energy ${value}`);
+    });
+    reset.onPress.connect(() => {
+      runtimeState.name = "Designer";
+      runtimeState.energy = 48;
+      input.value = runtimeState.name;
+      slider.value = runtimeState.energy;
+      progress.progress = runtimeState.energy;
+      status.show("Runtime values reset · document unchanged");
+    });
+
     sceneRoot?.destroy({ children: true });
     sceneRoot = root;
     app.stage.addChild(root);

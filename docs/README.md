@@ -13,4 +13,4 @@
 - [Итерация 05 — инструменты viewport и окно Assets](tasks/iteration-05-viewport-tools-and-assets-window/README.md)
 - [Итерация 06 — Spine, окна, пресеты и экспорт в PixiJS](tasks/iteration-06-spine-windows-presets-export/README.md)
 - [Iteration 07 — anchor constraints v0](tasks/iteration-07-anchor-constraints/README.md)
-- [Итерация 08 — UI-компоненты, текст и layout groups](tasks/iteration-08-ui-components-text-and-layouts/README.md)
+- [Итерация 08 — завершённый vertical slice UI-компонентов, текста и layout groups](tasks/iteration-08-ui-components-text-and-layouts/README.md)

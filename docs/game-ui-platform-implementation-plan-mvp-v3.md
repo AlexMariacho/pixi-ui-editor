@@ -139,13 +139,13 @@ Runtime детерминированно выбирает профиль по vi
 - одна рабочая область без real-time collaboration;
 - сцены с reference viewport;
 - node hierarchy;
-- `Container`, `Image`, `Text`, `Spine`, `PrefabInstance`;
+- `Container`, `Image`, styled `Text`, `Spine`, `PrefabInstance`, button, scroll view, single-line input, horizontal slider и progress bar;
 - выбор, перемещение, resize и базовый rotate;
 - inspector основных свойств;
-- загрузка изображений и Spine package;
+- загрузка изображений, font-assets и Spine package;
 - разделение `Node` и `Asset`;
 - `Select another asset` и `Replace asset source`;
-- базовые anchors и простой flow container;
+- anchors со stretch и horizontal/vertical/grid layout groups;
 - обязательные layout-профили `desktop` и `mobile`;
 - несколько viewport presets внутри каждого профиля и safe area overlay;
 - prefab definition, instance и overrides;
@@ -305,7 +305,7 @@ hostNode.displayObject.addChild(dynamicContent);
 
 ---
 
-## 6. Document schema v0
+## 6. Document schema v3
 
 Для первого vertical slice достаточно следующих сущностей:
 
@@ -326,7 +326,10 @@ ProjectDocument
 type UINode = {
   id: string;
   name: string;
-  type: "container" | "image" | "text" | "spine" | "prefab-instance";
+  type:
+    | "container" | "image" | "text" | "spine" | "prefab-instance"
+    | "button" | "scroll-view" | "input" | "slider" | "progress-bar"
+    | "horizontal-layout" | "vertical-layout" | "grid-layout";
   parentId: string | null;
   children: string[];
   visible: boolean;
@@ -427,10 +430,10 @@ Prefab хранит собственную hierarchy и список exposed pro
 
 - загрузка manifest и scene JSON;
 - asset resolver для изображений;
-- node factory для `Container`, `Image`, `Text`;
+- node factory через общий `NodeView` для всех schema v3 node types;
 - базовые transforms;
 - индекс render nodes по stable ID и generic binding;
-- runtime-demo с обработчиком кнопки или клика;
+- runtime-demo с binding/stable-ID lookup, input и связью slider → progress bar;
 - deterministic scene loading.
 
 Критерий выхода: изменение JSON меняет UI в runtime-demo без изменения игрового кода.
@@ -667,9 +670,9 @@ Editor document → shared runtime → runtime-demo
 
 К demo vertical slice добавляются:
 
-- Spine;
+- Spine, font-assets и styled text;
 - prefab instances и overrides;
-- flow layout;
+- horizontal/vertical/grid layout groups и scroll view;
 - backend persistence;
 - publish snapshots;
 - ZIP export;
@@ -718,7 +721,7 @@ Editor document → shared runtime → runtime-demo
 MVP считается готовым к внутреннему пилоту, когда выполнены все условия:
 
 - пользователь создает проект и минимум две сцены;
-- в сцене используются Image, Text, Spine и PrefabInstance;
+- в сцене используются Image, styled Text, Spine, PrefabInstance, layout groups и generic UI controls;
 - ассет можно заменить глобально без изменения node IDs;
 - prefab definition обновляет минимум два instances, сохраняя overrides;
 - каждая сцена содержит оба обязательных layout-профиля: `desktop` и `mobile`;

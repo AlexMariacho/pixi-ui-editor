@@ -10,6 +10,21 @@ canvas {
   display: block;
 }
 
+.runtime-status {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  max-width: calc(100vw - 32px);
+  padding: 9px 13px;
+  color: #cbd5e1;
+  background: rgb(15 23 42 / 88%);
+  border: 1px solid #475569;
+  border-radius: 999px;
+  font: 13px/1.2 system-ui, sans-serif;
+  pointer-events: none;
+}
+
 .package-hint {
   position: fixed;
   inset: 0;

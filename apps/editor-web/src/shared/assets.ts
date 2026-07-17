@@ -1,9 +1,23 @@
 import { loadSceneFonts, loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
 import type { Texture } from "pixi.js";
+import buttonDisabledUrl from "../../../../examples/sample-project/assets/button-disabled.svg";
+import buttonHoverUrl from "../../../../examples/sample-project/assets/button-hover.svg";
+import buttonNormalUrl from "../../../../examples/sample-project/assets/button-normal.svg";
+import buttonPressedUrl from "../../../../examples/sample-project/assets/button-pressed.svg";
+import controlFillUrl from "../../../../examples/sample-project/assets/control-fill.svg";
+import controlHandleUrl from "../../../../examples/sample-project/assets/control-handle.svg";
+import controlTrackUrl from "../../../../examples/sample-project/assets/control-track.svg";
 import sampleLogoUrl from "../../../../examples/sample-project/assets/sample-logo.png";
 
 const SAMPLE_ASSET_URLS: Record<string, string> = {
+  "assets/button-disabled.svg": buttonDisabledUrl,
+  "assets/button-hover.svg": buttonHoverUrl,
+  "assets/button-normal.svg": buttonNormalUrl,
+  "assets/button-pressed.svg": buttonPressedUrl,
+  "assets/control-fill.svg": controlFillUrl,
+  "assets/control-handle.svg": controlHandleUrl,
+  "assets/control-track.svg": controlTrackUrl,
   "assets/sample-logo.png": sampleLogoUrl,
 };
 

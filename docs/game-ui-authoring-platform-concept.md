@@ -1811,10 +1811,15 @@ Developer attaches game logic
 
 - Container;
 - Image;
-- Text;
+- styled Text;
 - Spine;
-- Slot;
-- Prefab Instance.
+- Prefab Instance;
+- Button;
+- Horizontal / Vertical / Grid Layout Group;
+- Scroll View;
+- single-line Input;
+- horizontal Slider;
+- left-to-right Progress Bar.
 
 ## Canvas
 
@@ -1829,6 +1834,7 @@ Developer attaches game logic
 ## Assets
 
 - upload image;
+- upload font;
 - upload Spine package;
 - asset library;
 - select another asset;

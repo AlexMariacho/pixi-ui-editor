@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare:sample": "node scripts/prepare-sample-package.mjs",
     "dev": "vite",
     "preview": "vite preview",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
