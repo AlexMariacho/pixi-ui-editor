@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createStableId, validateProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./index.js";
-import { loadUiPrefs, UI_PREFS_STORAGE_KEY } from "../uiPrefs.js";
+import { loadUiPrefs, UI_PREFS_STORAGE_KEY } from "../shared/uiPrefs.js";
 import { imageNodeId } from "./test-utils.js";
 
 describe("loadUiPrefs", () => {

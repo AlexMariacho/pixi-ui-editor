@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildSceneView, loadSceneSpines, loadSceneTextures, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument } from "@pixi-ui-editor/schema";
 import { Application, Container, type Texture } from "pixi.js";
-import { resolveFileUrl } from "./assets.js";
+import { resolveFileUrl } from "../../shared/assets.js";
 
 const PREVIEW_ROUTE = "runtime";
 const PREVIEW_READY = "pixi-ui-editor:preview-ready";

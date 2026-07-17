@@ -1,6 +1,6 @@
 import { resolveAnchoredTransform, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
 import { createStableId, type LayoutProfileId, type UINode } from "@pixi-ui-editor/schema";
-import { getCachedImageAssetSize } from "../assets.js";
+import { getCachedImageAssetSize } from "../shared/assets.js";
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";

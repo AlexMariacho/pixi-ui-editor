@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
-import { isRuntimePreviewRoute, RuntimePreview } from "./RuntimePreview.js";
+import { isRuntimePreviewRoute, RuntimePreview } from "./panels/preview/RuntimePreview.js";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");

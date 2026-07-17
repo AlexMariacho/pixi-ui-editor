@@ -3,9 +3,9 @@ import { buildSceneView, getSpineViewPlayback, resolveAnchoredTransform, resolve
 import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
-import { loadEditorSceneSpines, loadEditorSceneTextures } from "../assets.js";
-import { PREFAB_DRAG_TYPE } from "../PresetsPanel.js";
-import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../editorCommands.js";
+import { loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
+import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
+import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
 import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, EMPTY_CONTAINER_GIZMO_SIZE, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
 import { ToolPanel, commandTitle } from "../panels/toolbar/ToolPanel.js";

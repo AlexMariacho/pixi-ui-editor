@@ -1,7 +1,7 @@
 import { useState, type DragEvent } from "react";
-import { useEditorStore } from "./store/index.js";
-import { useUiPrefsStore } from "./uiPrefs.js";
-import { FloatingWindow } from "./FloatingWindow.js";
+import { useEditorStore } from "../../store/index.js";
+import { useUiPrefsStore } from "../../shared/uiPrefs.js";
+import { FloatingWindow } from "../../shared/FloatingWindow.js";
 
 export const NODE_DRAG_TYPE = "application/x-pixi-ui-editor-node";
 export const PREFAB_DRAG_TYPE = "application/x-pixi-ui-editor-prefab";

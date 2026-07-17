@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "../../store/index.js";
-import { NODE_DRAG_TYPE } from "../../PresetsPanel.js";
+import { NODE_DRAG_TYPE } from "../presets/PresetsPanel.js";
 export type HierarchyDropMode = "before" | "inside" | "after";
 
 export function HierarchyTree({ owner, prefabs, selectedNodeIds, implicitRootNodeId }: { owner: { rootNodeIds: string[]; nodes: UINode[] }; prefabs: ProjectDocument["prefabs"]; selectedNodeIds: string[]; implicitRootNodeId?: string }) {

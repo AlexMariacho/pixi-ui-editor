@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { EditorTool, ViewMode } from "../../store/index.js";
-import { EDITOR_COMMAND_IDS, editorCommandRegistry, type EditorCommandId } from "../../editorCommands.js";
+import { EDITOR_COMMAND_IDS, editorCommandRegistry, type EditorCommandId } from "../../shared/editorCommands.js";
 export function ToolPanel({ activeTool, viewMode }: { activeTool: EditorTool; viewMode: ViewMode }) {
   const tools: readonly { tool: EditorTool; commandId: EditorCommandId; icon: ReactNode }[] = [
     { tool: "pan", commandId: EDITOR_COMMAND_IDS.panTool, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg> },

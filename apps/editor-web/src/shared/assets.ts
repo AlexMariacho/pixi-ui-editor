@@ -1,7 +1,7 @@
 import { loadSceneSpines, loadSceneTextures, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
 import type { Texture } from "pixi.js";
-import sampleLogoUrl from "../../../examples/sample-project/assets/sample-logo.png";
+import sampleLogoUrl from "../../../../examples/sample-project/assets/sample-logo.png";
 
 const SAMPLE_ASSET_URLS: Record<string, string> = {
   "assets/sample-logo.png": sampleLogoUrl,

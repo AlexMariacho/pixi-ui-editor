@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "r
 import type { Asset, AssetFile } from "@pixi-ui-editor/schema";
 import { Application } from "pixi.js";
 import { collectNodeAssetIds, createSpineView, loadSpineAsset, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { clearEditorSpineCache, resolveAssetUrl, resolveFileUrl } from "./assets.js";
-import { useEditorStore } from "./store/index.js";
-import { useUiPrefsStore } from "./uiPrefs.js";
-import { FloatingWindow } from "./FloatingWindow.js";
+import { clearEditorSpineCache, resolveAssetUrl, resolveFileUrl } from "../../shared/assets.js";
+import { useEditorStore } from "../../store/index.js";
+import { useUiPrefsStore } from "../../shared/uiPrefs.js";
+import { FloatingWindow } from "../../shared/FloatingWindow.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);

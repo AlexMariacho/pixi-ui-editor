@@ -1,4 +1,4 @@
-import { getEditingTarget, useEditorStore, type EditorState } from "./store/index.js";
+import { getEditingTarget, useEditorStore, type EditorState } from "../store/index.js";
 
 export const EDITOR_COMMAND_IDS = {
   panTool: "tool.pan",
