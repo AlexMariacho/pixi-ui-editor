@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { validateProjectDocument, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { useEditorStore } from "./store.js";
-import { getNodeWorldMatrix } from "./transformCoordinates.js";
+import { getNodeWorldMatrix } from "./canvas/transformCoordinates.js";
 import { imageNodeId, initialDocument, textNodeId } from "./store.test-utils.js";
 
 describe("scenes", () => {

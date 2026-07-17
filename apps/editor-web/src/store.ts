@@ -14,7 +14,7 @@ import {
 import { create } from "zustand";
 import sampleJson from "../../../examples/sample-project/project.json";
 import { getCachedImageAssetSize } from "./assets.js";
-import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "./transformCoordinates.js";
+import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "./canvas/transformCoordinates.js";
 
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";

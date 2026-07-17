@@ -5,7 +5,7 @@ import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-ed
 import { resolveProfileTransform, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { getEditingTarget, useEditorStore, type AnchorRect } from "./store.js";
 import { loadEditorSceneSpines } from "./assets.js";
-import { getNodeWorldMatrix } from "./transformCoordinates.js";
+import { getNodeWorldMatrix } from "./canvas/transformCoordinates.js";
 
 type InspectorWindowProps = {
   title: string;
