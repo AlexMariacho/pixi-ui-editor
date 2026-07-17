@@ -1,6 +1,6 @@
 import { resolveAnchoredTransform, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
 import { createStableId, type LayoutProfileId, type UINode } from "@pixi-ui-editor/schema";
-import { getCachedImageAssetSize } from "../shared/assets.js";
+import { getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/assets.js";
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
@@ -218,7 +218,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
 
     return commitCandidate(state, candidate, "Node creation was rejected because it makes the project document invalid.");
   }),
-  addNodeFromAsset: (assetId, _position) => set((state) => {
+  addNodeFromAsset: (assetId, position) => set((state) => {
     const candidate = structuredClone(state.document);
     const target = getEditingTarget(candidate, state);
     const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
@@ -230,8 +230,20 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     const isImage = asset.type === "image";
     const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
     const imageSize = getCachedImageAssetSize(asset);
-    const width = isImage ? imageSize?.width ?? 100 : 200;
-    const height = isImage ? imageSize?.height ?? 100 : 200;
+    const spineSize = getCachedSpineAssetSize(asset);
+    const width = isImage ? imageSize?.width ?? 100 : spineSize?.width ?? 200;
+    const height = isImage ? imageSize?.height ?? 100 : spineSize?.height ?? 200;
+    const parentSize = getParentLayoutSize(target, { parentId: sceneRoot?.id ?? null } as UINode, state.activeProfile);
+    const parentPosition = worldPointToLocal(
+      sceneRoot === undefined ? undefined : getNodeWorldMatrix(target, sceneRoot.id, state.activeProfile),
+      position,
+    );
+    if (parentPosition === undefined) {
+      console.warn(`Cannot add a node from asset '${assetId}': the destination parent has a non-invertible transform.`);
+      return state;
+    }
+    const x = parentPosition.x - parentSize.width * 0.5;
+    const y = parentPosition.y - parentSize.height * 0.5;
     const node: UINode = {
       id: createStableId(),
       name: asset.name,
@@ -241,8 +253,8 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       children: [],
       visible: true,
       transform: {
-        x: 0,
-        y: 0,
+        x: state.activeProfile === "desktop" ? x : 0,
+        y: state.activeProfile === "desktop" ? y : 0,
         width,
         height,
         scaleX: 1,
@@ -256,6 +268,9 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
         pivotY: 0.5,
       },
     };
+    if (state.activeProfile === "mobile") {
+      node.layoutOverrides = { mobile: { transform: { x, y } } };
+    }
     target.nodes.push(node);
     if (sceneRoot === undefined) target.rootNodeIds.push(node.id);
     else sceneRoot.children.push(node.id);

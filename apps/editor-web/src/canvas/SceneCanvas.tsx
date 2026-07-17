@@ -3,7 +3,7 @@ import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineView
 import type { ButtonStateKey, LayoutProfileId, ProjectDocument, UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
-import { loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
+import { loadEditorImageAssetSize, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
@@ -828,7 +828,12 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       event.preventDefault();
       const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
       const position = toWorldPosition(event);
-      if (document.assets.some((candidate) => candidate.id === assetId) && position !== undefined) addNodeFromAsset(assetId, position);
+      const asset = document.assets.find((candidate) => candidate.id === assetId);
+      if (asset !== undefined && position !== undefined) {
+        void (asset.type === "image" ? loadEditorImageAssetSize(asset) : loadEditorSpineAssetSize(asset))
+          .catch((error) => console.warn(`Unable to load native size for asset '${asset.id}'.`, error))
+          .finally(() => addNodeFromAsset(assetId, position));
+      }
       return;
     }
     if (!isPrefabDrag(event)) return;

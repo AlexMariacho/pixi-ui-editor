@@ -1,4 +1,4 @@
-import { loadSceneSpines, loadSceneTextures, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
 import type { Texture } from "pixi.js";
 import sampleLogoUrl from "../../../../examples/sample-project/assets/sample-logo.png";
@@ -27,6 +27,30 @@ export function getCachedImageAssetSize(asset: Asset): { width: number; height: 
   const texture = textureCache.get(asset.source.uri);
   if (texture === undefined) return undefined;
   return { width: texture.width, height: texture.height };
+}
+
+/** Ensures a dropped image uses its native dimensions even before it is part of a scene. */
+export async function loadEditorImageAssetSize(asset: Asset): Promise<{ width: number; height: number } | undefined> {
+  if (asset.type !== "image") return undefined;
+  const url = resolveAssetUrl(asset);
+  if (url === undefined) return undefined;
+  const texture = textureCache.get(asset.source.uri) ?? await loadTexture(url);
+  textureCache.set(asset.source.uri, texture);
+  return { width: texture.width, height: texture.height };
+}
+
+export function getCachedSpineAssetSize(asset: Asset): { width: number; height: number } | undefined {
+  if (asset.type !== "spine") return undefined;
+  const skeleton = spineCache.get(asset.files.skeleton.uri);
+  if (skeleton === undefined || skeleton.width <= 0 || skeleton.height <= 0) return undefined;
+  return { width: skeleton.width, height: skeleton.height };
+}
+
+/** Ensures a dropped Spine asset uses the bounds exported with its skeleton data. */
+export async function loadEditorSpineAssetSize(asset: Asset): Promise<{ width: number; height: number } | undefined> {
+  if (asset.type !== "spine") return undefined;
+  await loadSpineAsset(asset, resolveFileUrl, spineCache);
+  return getCachedSpineAssetSize(asset);
 }
 
 export function loadEditorSceneSpines(document: ProjectDocument, sceneId: string) {

@@ -78,8 +78,8 @@ describe("addNodeFromAsset", () => {
       assetId: asset.id,
       parentId: rootNodeId,
       transform: {
-        x: 0,
-        y: 0,
+        x: -836.55,
+        y: -472.11,
         width: 200,
         height: 200,
         anchorMinX: 0.5,
