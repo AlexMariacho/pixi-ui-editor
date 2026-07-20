@@ -7,7 +7,7 @@ import { loadEditorAssetOrFrameSize, loadEditorSceneFonts, loadEditorSceneSpines
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
-import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
+import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, REFERENCE_VIEWPORT_BORDER, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
 import { ToolPanel, commandTitle } from "../panels/toolbar/ToolPanel.js";
 
 const MIN_ZOOM = 0.05;
@@ -76,6 +76,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<Container | null>(null);
   const artboardRef = useRef<Graphics | null>(null);
+  const referenceViewportFrameRef = useRef<Graphics | null>(null);
   const sceneRootRef = useRef<Container | null>(null);
   const nodeViewsRef = useRef<Map<string, Container>>(new Map());
   const texturesRef = useRef<Map<string, Texture>>(new Map());
@@ -212,6 +213,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
       const world = new Container();
       const artboard = new Graphics();
+      const referenceViewportFrame = new Graphics();
+      referenceViewportFrame.eventMode = "none";
       world.addChild(artboard);
       const overlay = new Container();
       overlay.eventMode = "none";
@@ -509,6 +512,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
       worldRef.current = world;
       artboardRef.current = artboard;
+      referenceViewportFrameRef.current = referenceViewportFrame;
       selectionGraphicsRef.current = selectionGraphics;
       resizeHandlesRef.current = resizeHandles;
       setApplication(application);
@@ -519,6 +523,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       removeDomListeners?.();
       worldRef.current = null;
       artboardRef.current = null;
+      referenceViewportFrameRef.current = null;
       sceneRootRef.current = null;
       nodeViewsRef.current = new Map();
       spineDataRef.current = new Map();
@@ -569,8 +574,10 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const viewportChanged = viewportRef.current?.width !== totalWidth || viewportRef.current?.height !== maxHeight;
       viewportRef.current = { width: totalWidth, height: maxHeight };
       const artboard = artboardRef.current?.clear();
+      const referenceViewportFrame = referenceViewportFrameRef.current?.clear();
       for (const placement of placements) {
         artboard?.rect(placement.x, 0, placement.viewport.width, placement.viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
+        referenceViewportFrame?.rect(placement.x, 0, placement.viewport.width, placement.viewport.height).stroke({ width: 1, color: REFERENCE_VIEWPORT_BORDER });
       }
 
       void Promise.all(placements.map((placement) => Promise.all([
@@ -621,6 +628,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         nodeViewsRef.current = new Map();
         spineDataRef.current = new Map();
         world.addChild(mapRoot);
+        if (referenceViewportFrame !== undefined) world.addChild(referenceViewportFrame);
         if (spinePlaybackTickerRef.current !== null) {
           application.ticker.remove(spinePlaybackTickerRef.current);
           spinePlaybackTickerRef.current = null;
@@ -644,7 +652,11 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     viewportRef.current = { width: viewport.width, height: viewport.height };
     // У пресета нет собственного viewport, поэтому рамка reference viewport в режиме его редактирования не рисуется.
     const artboard = artboardRef.current?.clear();
-    if (editingPrefabName === null) artboard?.rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
+    const referenceViewportFrame = referenceViewportFrameRef.current?.clear();
+    if (editingPrefabName === null) {
+      artboard?.rect(0, 0, viewport.width, viewport.height).fill(ARTBOARD_FILL).stroke({ width: 2, color: ARTBOARD_BORDER });
+      referenceViewportFrame?.rect(0, 0, viewport.width, viewport.height).stroke({ width: 1, color: REFERENCE_VIEWPORT_BORDER });
+    }
 
     void Promise.all([loadEditorSceneTextures(effectDocument, sceneId), loadEditorSceneSpines(effectDocument, sceneId), loadEditorSceneFonts(effectDocument, sceneId)]).then(([textures, spines, fonts]) => {
       if (cancelled) return;
@@ -686,6 +698,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       fontsRef.current = fonts;
       spineDataRef.current = spines;
       world.addChild(root);
+      if (referenceViewportFrame !== undefined) world.addChild(referenceViewportFrame);
       const playbackState = useEditorStore.getState();
       for (const node of builtScene.nodes) {
         if (node.type === "button") {

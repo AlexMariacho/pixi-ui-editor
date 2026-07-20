@@ -2,6 +2,8 @@ import { Graphics } from "pixi.js";
 export const CANVAS_BACKGROUND = 0x181818;
 export const ARTBOARD_FILL = 0x1e1e2e;
 export const ARTBOARD_BORDER = 0x3c3c50;
+// Reference viewport must stay visible above authored content, including full-screen nodes.
+export const REFERENCE_VIEWPORT_BORDER = 0x9c9cb8;
 export const SELECTION_COLOR = 0x4c9aff;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
