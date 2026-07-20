@@ -1,7 +1,7 @@
 import { createStableId, type Scene } from "@pixi-ui-editor/schema";
 import { commitCandidate, createSceneRoot, getSceneRoot } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addScene" | "renameScene" | "deleteScene" | "updateReferenceViewport";
+type Keys = "addScene" | "renameScene" | "setSceneAudio" | "deleteScene" | "updateReferenceViewport";
 export const createScenesSlice: EditorSlice<Keys> = (set) => ({
   addScene: (name) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -43,6 +43,22 @@ export const createScenesSlice: EditorSlice<Keys> = (set) => ({
 
     scene.name = trimmedName;
     return commitCandidate(state, candidate, "Window rename was rejected because it makes the project document invalid.");
+  }),
+  setSceneAudio: (sceneId, audio) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const scene = candidate.scenes.find((candidateScene) => candidateScene.id === sceneId);
+    if (scene === undefined) {
+      console.warn(`Cannot set audio for window '${sceneId}': it does not exist.`);
+      return state;
+    }
+    if (audio === undefined || (audio.backgroundMusicAssetId === undefined && audio.volume === undefined)) delete scene.audio;
+    else {
+      const normalized: NonNullable<Scene["audio"]> = {};
+      if (audio.backgroundMusicAssetId !== undefined) normalized.backgroundMusicAssetId = audio.backgroundMusicAssetId;
+      if (audio.volume !== undefined) normalized.volume = audio.volume;
+      scene.audio = normalized;
+    }
+    return commitCandidate(state, candidate, "Window audio update was rejected because it makes the project document invalid.");
   }),
   deleteScene: (sceneId) => set((state) => {
     if (state.document.scenes.length <= 1) {

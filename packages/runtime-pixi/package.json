@@ -17,6 +17,7 @@
     "@esotericsoftware/spine-pixi-v8": "^4.3.10",
     "@pixi-ui-editor/schema": "workspace:*",
     "@pixi/layout": "3.2.1",
+    "@pixi/sound": "^6.0.1",
     "@pixi/ui": "2.3.2",
     "pixi.js": "^8.19.0",
     "yoga-layout": "^3.2.1"

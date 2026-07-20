@@ -50,6 +50,10 @@ export function listImageAssetOptions(assets: Asset[]): { id: string; label: str
   return options;
 }
 
+export function listSoundAssetOptions(assets: Asset[]): { id: string; label: string }[] {
+  return assets.filter((asset): asset is Extract<Asset, { type: "sound" }> => asset.type === "sound").map((asset) => ({ id: asset.id, label: asset.name }));
+}
+
 async function loadAtlasJsonData(asset: AtlasAsset): Promise<SpritesheetData> {
   const cached = atlasJsonCache.get(asset.files.json.uri);
   if (cached !== undefined) return cached;

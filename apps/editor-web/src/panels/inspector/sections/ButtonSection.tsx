@@ -1,5 +1,5 @@
 import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
-import { listImageAssetOptions } from "../../../shared/assets.js";
+import { listImageAssetOptions, listSoundAssetOptions } from "../../../shared/assets.js";
 import { useEditorStore } from "../../../store/index.js";
 import { InspectorField, InspectorWindow } from "../fields.js";
 
@@ -17,11 +17,13 @@ export function ButtonSection({ node }: { node: ButtonNode }) {
   const assets = useEditorStore((state) => state.document.assets);
   const setButtonStateAsset = useEditorStore((state) => state.setButtonStateAsset);
   const setButtonEnabled = useEditorStore((state) => state.setButtonEnabled);
+  const setButtonSounds = useEditorStore((state) => state.setButtonSounds);
   const previewButtonState = useEditorStore((state) => state.previewButtonState);
   const buttonPreviewState = useEditorStore((state) => state.buttonPreviewStates[node.id] ?? "normal");
   const imageOptions = listImageAssetOptions(assets);
+  const soundOptions = listSoundAssetOptions(assets);
 
-  return <InspectorWindow title="Button">
+  return <><InspectorWindow title="Button">
     {BUTTON_STATE_KEYS.map((state) => {
       const assetId = node.states[`${state}AssetId`];
       return <InspectorField key={state} label={BUTTON_STATE_LABELS[state]}>
@@ -42,5 +44,7 @@ export function ButtonSection({ node }: { node: ButtonNode }) {
         {BUTTON_STATE_KEYS.map((state) => <option key={state} value={state}>{BUTTON_STATE_LABELS[state]}</option>)}
       </select>
     </InspectorField>
-  </InspectorWindow>;
+  </InspectorWindow><InspectorWindow title="Sounds">
+    {([['pressAssetId', 'Press sound'], ['hoverAssetId', 'Hover sound']] as const).map(([field, label]) => <InspectorField key={field} label={label}><select value={node.sounds?.[field] ?? ""} onChange={(event) => setButtonSounds(node.id, { ...node.sounds, [field]: event.target.value || undefined })}><option value="">None</option>{soundOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></InspectorField>)}
+  </InspectorWindow></>;
 }

@@ -1,4 +1,5 @@
 export type { SkeletonData } from "@esotericsoftware/spine-pixi-v8";
+export type { Sound } from "@pixi/sound";
 export * from "./document.js";
 export * from "./layout.js";
 export * from "./layoutGroups.js";
@@ -15,3 +16,4 @@ export * from "./controls.js";
 export * from "./assets/textures.js";
 export * from "./assets/spine.js";
 export * from "./assets/fonts.js";
+export * from "./assets/sounds.js";

@@ -1,5 +1,6 @@
 import { BUTTON_STATE_KEYS, type UINode } from "@pixi-ui-editor/schema";
 import { type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
+import type { Sound } from "@pixi/sound";
 import { Container, Texture } from "pixi.js";
 import { ButtonNodeView } from "./ButtonNodeView.js";
 import { ContainerNodeView, ImageNodeView, LayoutGroupNodeView, PrefabInstanceNodeView, TextNodeView } from "./basic.js";
@@ -9,7 +10,7 @@ import { ScrollViewNodeView } from "./ScrollViewNodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
 import { ProgressBarNodeView, SliderNodeView } from "./ValueControlNodeViews.js";
 
-export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>): NodeView {
+export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>, sounds?: ReadonlyMap<string, Sound>): NodeView {
   switch (node.type) {
     case "container":
       return new ContainerNodeView();
@@ -26,7 +27,7 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
     case "spine":
       return new SpineNodeView(spines?.get(node.assetId), node.animation, node.loop ?? true);
     case "button":
-      return new ButtonNodeView(node, textures, interaction);
+      return new ButtonNodeView(node, textures, interaction, sounds);
     case "input":
       return new InputNodeView(node, textures, interaction, fonts);
     case "slider":
@@ -49,9 +50,12 @@ export function collectNodeAssetIds(node: UINode): string[] {
     case "spine":
       return [node.assetId];
     case "button":
-      return BUTTON_STATE_KEYS
+      return [
+        ...BUTTON_STATE_KEYS
         .map((state) => node.states[`${state}AssetId`])
-        .filter((assetId): assetId is string => assetId !== undefined);
+        .filter((assetId): assetId is string => assetId !== undefined),
+        ...[node.sounds?.pressAssetId, node.sounds?.hoverAssetId].filter((assetId): assetId is string => assetId !== undefined),
+      ];
     case "container":
     case "prefab-instance":
       return [];

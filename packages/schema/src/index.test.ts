@@ -136,6 +136,15 @@ describe("schema v1", () => {
     expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
   });
 
+  it("rejects a button press sound that references an image asset", () => {
+    const document = createProjectDocumentFixture();
+    const button = addButtonNode(document);
+    button.sounds = { pressAssetId: button.states.normalAssetId };
+
+    const result = validateProjectDocument(document);
+    expect(result.issues).toMatchObject([{ code: "INCOMPATIBLE_ASSET_REFERENCE", path: "/scenes/0/nodes/2/sounds/pressAssetId" }]);
+  });
+
   it("accepts an image node whose assetId is an atlas frame id", () => {
     const document = createProjectDocumentFixture();
     addAtlasAssetWithFrame(document);

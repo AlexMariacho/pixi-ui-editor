@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
-export const CURRENT_SCHEMA_VERSION = 5 as const;
+export const CURRENT_SCHEMA_VERSION = 6 as const;
 const Id = Type.String({ format: "uuid" });
 const Name = Type.String({ minLength: 1 });
 export const LayoutProfileIdSchema = Type.Union([Type.Literal("desktop"), Type.Literal("mobile")]);
@@ -42,9 +42,10 @@ export type ButtonStateKey = (typeof BUTTON_STATE_KEYS)[number];
 /** Discriminated transition: в v0 поддержан только `instant`, чтобы позже добавить bump/slide/fade без неявных полей. */
 const ButtonTransition = Type.Object({ kind: Type.Literal("instant") });
 const ButtonStates = Type.Object({ normalAssetId: Id, hoverAssetId: Type.Optional(Id), pressedAssetId: Type.Optional(Id), disabledAssetId: Type.Optional(Id) });
+const ButtonSounds = Type.Object({ pressAssetId: Type.Optional(Id), hoverAssetId: Type.Optional(Id) });
 const ButtonTransitions = Type.Partial(Type.Object({ normal: ButtonTransition, hover: ButtonTransition, pressed: ButtonTransition, disabled: ButtonTransition }));
 // `enabled` — сериализованное начальное presentation-состояние; runtime setter документ не меняет.
-const Button = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("button"), states: ButtonStates, enabled: Type.Boolean(), transitions: Type.Optional(ButtonTransitions) })]);
+const Button = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("button"), states: ButtonStates, sounds: Type.Optional(ButtonSounds), enabled: Type.Boolean(), transitions: Type.Optional(ButtonTransitions) })]);
 // Прямые children — scroll items; их позицию владеет `@pixi/ui` List, поэтому per-profile overrides
 // настроек не нужны (как у text style) — только собственные transform/visibility остаются profile-aware.
 const ScrollViewDirection = Type.Union([Type.Literal("vertical"), Type.Literal("horizontal"), Type.Literal("both")]);
@@ -115,7 +116,8 @@ export type InputNode = Extract<UINode, { type: "input" }>;
 export type SliderNode = Extract<UINode, { type: "slider" }>;
 export type ProgressBarNode = Extract<UINode, { type: "progress-bar" }>;
 const Viewport = Type.Object({ width: Type.Number({ exclusiveMinimum: 0 }), height: Type.Number({ exclusiveMinimum: 0 }) });
-export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }) });
+const SceneAudio = Type.Object({ backgroundMusicAssetId: Type.Optional(Id), volume: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })) });
+export const SceneSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), layout: Type.Object({ referenceViewports: Type.Object({ desktop: Viewport, mobile: Viewport }) }), audio: Type.Optional(SceneAudio) });
 export type Scene = Static<typeof SceneSchema>;
 export const AssetFileSchema = Type.Object({ name: Name, uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }) });
 export type AssetFile = Static<typeof AssetFileSchema>;
@@ -167,6 +169,7 @@ function hierarchy(owner: Owner, path: string, assets: Map<string, Asset>, prefa
     if (isLayoutGroup(node) && node.backgroundAssetId !== undefined) { const asset = assets.get(node.backgroundAssetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, `Background asset '${node.backgroundAssetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, "A layout group background requires an image asset."); }
     // Путь ошибки сохраняется до конкретного state field, чтобы Inspector мог подсветить нужный picker.
     if (node.type === "button") BUTTON_STATE_KEYS.forEach((state) => { const field = `${state}AssetId` as const; const assetId = node.states[field]; if (assetId === undefined) return; const asset = assets.get(assetId), path = `${nodePath}/states/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${assetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, `A button '${state}' state requires an image asset.`); });
+    if (node.type === "button") for (const field of ["pressAssetId", "hoverAssetId"] as const) { const assetId = node.sounds?.[field]; if (assetId === undefined) continue; const asset = assets.get(assetId), soundPath = `${nodePath}/sounds/${field}`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", soundPath, `Asset '${assetId}' does not exist.`); else if (asset.type !== "sound") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", soundPath, `A button ${field} requires a sound asset.`); }
     if (node.type === "text" && node.style?.fontAssetId !== undefined) { const asset = assets.get(node.style.fontAssetId), path = `${nodePath}/style/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.style.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "A text node fontAssetId requires a font asset."); }
     if (node.type === "input" && node.backgroundAssetId !== undefined) { const asset = assets.get(node.backgroundAssetId); if (!asset) add(issues, "MISSING_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, `Background asset '${node.backgroundAssetId}' does not exist.`); else if (asset.type !== "image") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", `${nodePath}/backgroundAssetId`, "An input background requires an image asset."); }
     if (node.type === "input" && node.textStyle.fontAssetId !== undefined) { const asset = assets.get(node.textStyle.fontAssetId), path = `${nodePath}/textStyle/fontAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", path, `Asset '${node.textStyle.fontAssetId}' does not exist.`); else if (asset.type !== "font") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", path, "An input node textStyle fontAssetId requires a font asset."); }
@@ -207,7 +210,7 @@ function semantic(document: ProjectDocument): ValidationIssue[] {
   document.assets.forEach((asset) => { if (asset.type !== "atlas") return; for (const frameId of Object.values(asset.frames)) { if (!assets.has(frameId)) assets.set(frameId, { id: frameId, name: frameId, type: "image", source: { uri: "", mediaType: "image/png" } }); } });
   document.prefabs.forEach((prefab, i) => { register(prefab.id, `/prefabs/${i}/id`); prefabs.add(prefab.id); }); document.scenes.forEach((scene, i) => register(scene.id, `/scenes/${i}/id`));
   document.prefabs.forEach((prefab, i) => { prefab.nodes.forEach((node, j) => register(node.id, `/prefabs/${i}/nodes/${j}/id`)); hierarchy(prefab, `/prefabs/${i}`, assets, prefabs, issues); });
-  document.scenes.forEach((scene, i) => { scene.nodes.forEach((node, j) => register(node.id, `/scenes/${i}/nodes/${j}/id`)); hierarchy(scene, `/scenes/${i}`, assets, prefabs, issues); const bindings = new Set<string>(); scene.nodes.forEach((node, j) => { if (node.binding !== undefined) { const binding = node.binding.trim(); if (!binding) add(issues, "EMPTY_BINDING", `/scenes/${i}/nodes/${j}/binding`, "Binding must not be empty after trimming."); else if (bindings.has(binding)) add(issues, "DUPLICATE_BINDING", `/scenes/${i}/nodes/${j}/binding`, `Binding '${binding}' is duplicated in this scene.`); else bindings.add(binding); } }); });
+  document.scenes.forEach((scene, i) => { scene.nodes.forEach((node, j) => register(node.id, `/scenes/${i}/nodes/${j}/id`)); hierarchy(scene, `/scenes/${i}`, assets, prefabs, issues); const musicAssetId = scene.audio?.backgroundMusicAssetId; if (musicAssetId !== undefined) { const asset = assets.get(musicAssetId), musicPath = `/scenes/${i}/audio/backgroundMusicAssetId`; if (!asset) add(issues, "MISSING_ASSET_REFERENCE", musicPath, `Asset '${musicAssetId}' does not exist.`); else if (asset.type !== "sound") add(issues, "INCOMPATIBLE_ASSET_REFERENCE", musicPath, "Background music requires a sound asset."); } const bindings = new Set<string>(); scene.nodes.forEach((node, j) => { if (node.binding !== undefined) { const binding = node.binding.trim(); if (!binding) add(issues, "EMPTY_BINDING", `/scenes/${i}/nodes/${j}/binding`, "Binding must not be empty after trimming."); else if (bindings.has(binding)) add(issues, "DUPLICATE_BINDING", `/scenes/${i}/nodes/${j}/binding`, `Binding '${binding}' is duplicated in this scene.`); else bindings.add(binding); } }); });
   return issues;
 }
 function collectNonFiniteNumbers(input: unknown, path: string, issues: ValidationIssue[]): void {
@@ -243,7 +246,7 @@ function migrateV1ToV2(document: Record<string, unknown>): void {
     }
   }
 }
-export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds only optional fields and new discriminated asset/node branches, so existing v2 entities require no rewrite. v3→v4 adds only the new discriminated "atlas" asset branch, and v4→v5 only the "sound" asset branch, so existing entities require no rewrite either. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
+export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds optional control fields, v3→v4 the atlas asset branch, v4→v5 the sound asset branch, and v5→v6 optional audio references. Existing entities require no rewrite. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));

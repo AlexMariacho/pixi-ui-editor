@@ -1,5 +1,6 @@
 import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
 import { FancyButton } from "@pixi/ui";
+import type { Sound } from "@pixi/sound";
 import { Container, Graphics, Sprite, Texture } from "pixi.js";
 import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 
@@ -17,11 +18,15 @@ export class ButtonNodeView extends NodeView {
   private readonly button: FancyButton;
   private readonly stateViews: Record<ButtonStateKey, Container>;
   private readonly interaction: SceneInteractionMode;
+  private readonly sounds: ReadonlyMap<string, Sound> | undefined;
+  private soundAssetIds: ButtonNode["sounds"];
   private enabledState: boolean;
 
-  constructor(node: ButtonNode, textures: ReadonlyMap<string, Texture> | undefined, interaction: SceneInteractionMode) {
+  constructor(node: ButtonNode, textures: ReadonlyMap<string, Texture> | undefined, interaction: SceneInteractionMode, sounds?: ReadonlyMap<string, Sound>) {
     super(textures);
     this.interaction = interaction;
+    this.sounds = sounds;
+    this.soundAssetIds = node.sounds;
     const stateViews = {} as Record<ButtonStateKey, Container>;
     const normalTexture = textures?.get(node.states.normalAssetId);
     const viewFor = (state: ButtonStateKey, assetId: string | undefined): Container => {
@@ -41,6 +46,10 @@ export class ButtonNodeView extends NodeView {
     // Authoring-сцена инертна: FancyButton уже включил себе eventMode "static", снимаем его до applyEnabled.
     // Выделение и drag при этом не страдают: попадание ловит hitArea базового NodeView, а не это поддерево.
     if (interaction === "authoring") this.button.eventMode = "none";
+    else if (sounds !== undefined) {
+      this.button.onPress.connect(() => { const result = this.soundAssetIds?.pressAssetId === undefined ? undefined : this.sounds?.get(this.soundAssetIds.pressAssetId)?.play(); if (result instanceof Promise) void result.catch(() => undefined); });
+      this.button.onHover.connect(() => { const result = this.soundAssetIds?.hoverAssetId === undefined ? undefined : this.sounds?.get(this.soundAssetIds.hoverAssetId)?.play(); if (result instanceof Promise) void result.catch(() => undefined); });
+    }
     this.enabledState = node.enabled;
     this.applyEnabled(node.enabled);
     this.setContent(this.button);
@@ -55,6 +64,7 @@ export class ButtonNodeView extends NodeView {
 
   protected syncContent(node: UINode, transform: UINode["transform"]): void {
     if (node.type !== "button") return;
+    this.soundAssetIds = node.sounds;
 
     const normalTexture = this.textures?.get(node.states.normalAssetId);
     for (const state of BUTTON_STATE_KEYS) {

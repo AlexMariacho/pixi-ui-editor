@@ -233,6 +233,7 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
   const usageCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const owner of [...scenes, ...prefabs]) for (const node of owner.nodes) for (const id of collectNodeAssetIds(node)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const scene of scenes) if (scene.audio?.backgroundMusicAssetId !== undefined) counts.set(scene.audio.backgroundMusicAssetId, (counts.get(scene.audio.backgroundMusicAssetId) ?? 0) + 1);
     return counts;
   }, [scenes, prefabs]);
   const usageOf = (id: string) => usageCounts.get(id) ?? 0;

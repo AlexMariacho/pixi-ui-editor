@@ -33,6 +33,7 @@ export type EditorState = {
   selectScene(sceneId: string): void;
   addScene(name?: string): void;
   renameScene(sceneId: string, name: string): void;
+  setSceneAudio(sceneId: string, audio: Scene["audio"]): void;
   deleteScene(sceneId: string): void;
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
   updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string; style?: TextStyleDefinition }): void;
@@ -65,6 +66,7 @@ export type EditorState = {
   reportSpinePlaybackFrame(nodeId: string, playback: { current: number; total: number }): void;
   setButtonStateAsset(nodeId: string, state: ButtonStateKey, assetId: string | undefined): void;
   setButtonEnabled(nodeId: string, enabled: boolean): void;
+  setButtonSounds(nodeId: string, sounds: Extract<UINode, { type: "button" }>["sounds"]): void;
   previewButtonState(nodeId: string, state: ButtonStateKey): void;
   addNode(type: AddableNodeType): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;

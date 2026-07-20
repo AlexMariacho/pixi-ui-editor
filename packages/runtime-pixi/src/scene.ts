@@ -11,6 +11,7 @@ import { applyLayoutGroup, applyLayoutItem, createGridLineBreak, initializePixiL
 import { LayoutGroupNodeView } from "./views/basic.js";
 import { ScrollItemContainer } from "./scrollView.js";
 import { ScrollViewNodeView } from "./views/ScrollViewNodeView.js";
+import type { Sound } from "@pixi/sound";
 
 export type BuildSceneViewOptions = {
   /** Explicit: an editor canvas must pass "authoring", Preview and the consuming app "runtime". */
@@ -18,6 +19,7 @@ export type BuildSceneViewOptions = {
   textures?: ReadonlyMap<string, Texture>;
   spines?: ReadonlyMap<string, SkeletonData>;
   fonts?: ReadonlyMap<string, string>;
+  sounds?: ReadonlyMap<string, Sound>;
   /** Called after Yoga changes a managed rectangle; authoring hosts use it to refresh overlays. */
   onLayout?: () => void;
 };
@@ -30,7 +32,7 @@ export function buildSceneView(
   options: BuildSceneViewOptions,
 ): { root: Container; nodeViews: Map<string, Container> } {
   initializePixiLayout();
-  const { interaction, textures, spines, fonts, onLayout } = options;
+  const { interaction, textures, spines, fonts, sounds, onLayout } = options;
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
 
   if (scene === undefined) {
@@ -56,7 +58,7 @@ export function buildSceneView(
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
-      }, fonts);
+      }, fonts, sounds);
       if (isLayoutGroup(node)) applyLayoutGroup(view, node, profile, parentSize);
       // Yoga owns only the group's inner layoutContent; the outer NodeView keeps authored transform.
       view.update(node, profile, parentSize);

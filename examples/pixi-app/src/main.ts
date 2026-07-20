@@ -1,14 +1,21 @@
 import {
   ButtonNodeView,
+  buildSceneView,
+  createSceneAudioPlayback,
   InputNodeView,
-  loadSceneView,
+  loadSceneFonts,
+  loadSceneSounds,
+  loadSceneSpines,
+  loadSceneTextures,
   parseProjectDocumentJson,
   ProgressBarNodeView,
   resolveProfileForViewport,
   SliderNodeView,
+  type SkeletonData,
+  type Sound,
 } from "@pixi-ui-editor/runtime-pixi";
 import type { ProjectDocument, Scene } from "@pixi-ui-editor/schema";
-import { Application, Container } from "pixi.js";
+import { Application, Container, type Spritesheet, type Texture } from "pixi.js";
 import "./styles.css";
 
 const PACKAGE_ROOT = "./package/";
@@ -112,6 +119,11 @@ async function main(): Promise<void> {
   let profile = resolveProfileForViewport(packageDocument.settings, window.innerWidth, window.innerHeight);
   let sceneRoot: Container | null = null;
   let buildToken = 0;
+  const textureCache = new Map<string, Texture>();
+  const spineCache = new Map<string, SkeletonData>();
+  const spritesheetCache = new Map<string, Spritesheet>();
+  const soundCache = new Map<string, Sound>();
+  const audioPlayback = createSceneAudioPlayback();
 
   // Scale-to-fit по меньшей стороне reference viewport активного профиля, с центрированием.
   const layoutSceneRoot = () => {
@@ -124,7 +136,13 @@ async function main(): Promise<void> {
 
   const rebuildScene = async () => {
     const token = ++buildToken;
-    const { root, nodeViews } = await loadSceneView(packageDocument, scene.id, profile, resolvePackageFileUrl, { interaction: "runtime" });
+    const [textures, spines, fonts, sounds] = await Promise.all([
+      loadSceneTextures(packageDocument, scene.id, (asset) => asset.type === "image" ? resolvePackageFileUrl(asset.source.uri) : undefined, resolvePackageFileUrl, textureCache, spritesheetCache),
+      loadSceneSpines(packageDocument, scene.id, resolvePackageFileUrl, spineCache),
+      loadSceneFonts(packageDocument, scene.id, resolvePackageFileUrl),
+      loadSceneSounds(packageDocument, scene.id, resolvePackageFileUrl, soundCache),
+    ]);
+    const { root, nodeViews } = buildSceneView(packageDocument, scene.id, profile, { interaction: "runtime", textures, spines, fonts, sounds });
     if (token !== buildToken) {
       root.destroy({ children: true });
       return;
@@ -160,6 +178,7 @@ async function main(): Promise<void> {
     sceneRoot = root;
     app.stage.addChild(root);
     layoutSceneRoot();
+    audioPlayback.update(scene.audio, sounds);
   };
 
   window.addEventListener("resize", () => {
