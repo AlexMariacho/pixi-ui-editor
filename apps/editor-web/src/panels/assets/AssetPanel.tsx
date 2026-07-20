@@ -184,7 +184,7 @@ async function findAtlasJsonFile(jsonFiles: File[]): Promise<{ file: File; frame
 }
 
 export function AssetPanel() {
-  const viewMode = useUiPrefsStore((state) => state.assetsViewMode); const setViewMode = useUiPrefsStore((state) => state.setAssetsViewMode); const groupByCategory = useUiPrefsStore((state) => state.assetsGroupByCategory); const setGroupByCategory = useUiPrefsStore((state) => state.setAssetsGroupByCategory);
+  const viewMode = useUiPrefsStore((state) => state.assetsViewMode); const setViewMode = useUiPrefsStore((state) => state.setAssetsViewMode);
   const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs);
   const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const addAtlasAsset = useEditorStore((state) => state.addAtlasAsset); const addSoundAsset = useEditorStore((state) => state.addSoundAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null); const dragDepthRef = useRef(0); const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null); const [isDragActive, setIsDragActive] = useState(false); const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -271,7 +271,7 @@ export function AssetPanel() {
 
   const rowClassName = viewMode === "grid" ? "asset-grid-tile" : viewMode === "compact" ? "asset-compact-row" : "asset-row";
   const dragStart = (id: string) => (event: DragEvent<HTMLElement>) => { event.dataTransfer.setData("application/x-pixi-ui-editor-asset", id); event.dataTransfer.effectAllowed = "copy"; };
-  const browserSections = useMemo(() => deriveAssetBrowser(assets, searchQuery, expandedAtlasIds, groupByCategory), [assets, searchQuery, expandedAtlasIds, groupByCategory]);
+  const browserSections = useMemo(() => deriveAssetBrowser(assets, searchQuery, expandedAtlasIds, true), [assets, searchQuery, expandedAtlasIds]);
 
   const frameItem = (atlas: AtlasAsset, frameName: string, frameId: string) => {
     const usage = usageOf(frameId);
@@ -300,15 +300,14 @@ export function AssetPanel() {
     <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp,.woff2,.woff,.ttf,.otf,.wav,.mp3,.ogg,.aac,.m4a,audio/*" onChange={upload} />
     <div className="assets-toolbar">
       <div className="assets-search"><label className="sr-only" htmlFor="assets-search">Search assets</label><input id="assets-search" type="search" placeholder="Search assets" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape" && searchQuery.trim() !== "") { event.preventDefault(); setSearchQuery(""); } }} />{searchQuery !== "" && <button type="button" aria-label="Clear asset search" onClick={() => setSearchQuery("")}>×</button>}</div>
-      <button type="button" className={groupByCategory ? "assets-categories-active" : ""} aria-pressed={groupByCategory} onClick={() => setGroupByCategory(!groupByCategory)}>Categories</button>
-      <div className="assets-view-mode-toggle" role="group" aria-label="Asset view mode">{(["compact", "list", "grid"] as const).map((mode, index) => <button key={mode} type="button" className={viewMode === mode ? "assets-view-mode-active" : ""} aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{["≡", "☷", "▦"][index]}</button>)}</div>
-      <p className="asset-panel-drop-hint">Drop images, fonts, sounds, a spritesheet JSON + texture, or a Spine bundle here</p>
+      {isDragActive && <p className="asset-panel-drop-hint">Drop images, fonts, sounds, a spritesheet JSON + texture, or a Spine bundle here</p>}
     </div>
     <div className="assets-browser">{browserSections.length === 0 ? <p className="assets-empty-result">No assets match “{searchQuery.trim()}”</p> : browserSections.map((section) => {
       const expanded = section.id === "flat" || searchQuery.trim() !== "" || expandedCategoryIds.has(section.id);
       return <section key={section.id} className="asset-category"><>{section.id !== "flat" && <button type="button" className="asset-category-header" aria-expanded={expanded} onClick={() => toggleCategoryExpanded(section.id)}><span>{expanded ? "▾" : "▸"}</span>{section.label} <small>({section.assets.length})</small></button>}</>{expanded && <ul className={`asset-list asset-list-${viewMode}`}>{section.assets.map(assetItem)}</ul>}</section>;
     })}</div>
     <AssetPreviewPane selectedAsset={selectedAsset} selectedFrame={selectedFrame} />
+    <div className="assets-view-mode-toggle assets-view-mode-toggle-floating" role="group" aria-label="Asset view mode">{(["compact", "list", "grid"] as const).map((mode, index) => <button key={mode} type="button" className={viewMode === mode ? "assets-view-mode-active" : ""} aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{["≡", "☷", "▦"][index]}</button>)}</div>
   </section>;
 }
 

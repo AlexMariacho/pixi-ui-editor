@@ -16,7 +16,6 @@ describe("loadUiPrefs", () => {
     expect(loadUiPrefs()).toMatchObject({
       assetsWindowOpen: false,
       assetsViewMode: "list",
-      assetsGroupByCategory: false,
       presetsWindowOpen: false,
     });
   });
