@@ -1,11 +1,12 @@
 import type { ProgressBarNode, SliderNode } from "@pixi-ui-editor/schema";
+import { listImageAssetOptions } from "../../../shared/assets.js";
 import { useEditorStore } from "../../../store/index.js";
 import { InspectorField, InspectorWindow, NumberField } from "../fields.js";
 import { DEFAULT_TEXT_STYLE, TextStyleFields } from "./TextStyleFields.js";
 
 function ImageAssetField({ label, value, onChange }: { label: string; value: string; onChange: (assetId: string) => void }) {
   const assets = useEditorStore((state) => state.document.assets);
-  return <InspectorField label={label}><select value={value} onChange={(event) => onChange(event.target.value)}>{assets.filter((asset) => asset.type === "image").map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></InspectorField>;
+  return <InspectorField label={label}><select value={value} onChange={(event) => onChange(event.target.value)}>{listImageAssetOptions(assets).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></InspectorField>;
 }
 
 function FillPaddingFields({ padding, onChange }: { padding: SliderNode["fillPadding"]; onChange: (padding: SliderNode["fillPadding"]) => void }) {

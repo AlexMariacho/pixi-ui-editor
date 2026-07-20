@@ -1,4 +1,5 @@
 import { BUTTON_STATE_KEYS, type ButtonStateKey, type UINode } from "@pixi-ui-editor/schema";
+import { listImageAssetOptions } from "../../../shared/assets.js";
 import { useEditorStore } from "../../../store/index.js";
 import { InspectorField, InspectorWindow } from "../fields.js";
 
@@ -18,7 +19,7 @@ export function ButtonSection({ node }: { node: ButtonNode }) {
   const setButtonEnabled = useEditorStore((state) => state.setButtonEnabled);
   const previewButtonState = useEditorStore((state) => state.previewButtonState);
   const buttonPreviewState = useEditorStore((state) => state.buttonPreviewStates[node.id] ?? "normal");
-  const imageAssets = assets.filter((asset) => asset.type === "image");
+  const imageOptions = listImageAssetOptions(assets);
 
   return <InspectorWindow title="Button">
     {BUTTON_STATE_KEYS.map((state) => {
@@ -30,7 +31,7 @@ export function ButtonSection({ node }: { node: ButtonNode }) {
         >
           {/* Normal обязателен; остальные состояния при пустом значении берут его изображение. */}
           {state !== "normal" && <option value="">(use Normal)</option>}
-          {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+          {imageOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </InspectorField>;
     })}

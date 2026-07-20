@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildSceneView, loadSceneFonts, loadSceneSpines, loadSceneTextures, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument } from "@pixi-ui-editor/schema";
-import { Application, Container, type Texture } from "pixi.js";
+import { Application, Container, type Spritesheet, type Texture } from "pixi.js";
 import { resolveFileUrl } from "../../shared/assets.js";
 
 const PREVIEW_ROUTE = "runtime";
@@ -90,6 +90,7 @@ export function RuntimePreview() {
     const app = new Application();
     const textureCache = new Map<string, Texture>();
     const spineCache = new Map<string, SkeletonData>();
+    const atlasSpritesheetCache = new Map<string, Spritesheet>();
 
     const layoutScene = () => {
       if (payload === undefined || sceneRoot === undefined) return;
@@ -111,7 +112,7 @@ export function RuntimePreview() {
       const tokenAtStart = ++buildToken;
       try {
         const [textures, spines, fonts] = await Promise.all([
-          loadSceneTextures(currentPayload.document, currentPayload.sceneId, (asset) => asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined, textureCache),
+          loadSceneTextures(currentPayload.document, currentPayload.sceneId, (asset) => asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined, resolveFileUrl, textureCache, atlasSpritesheetCache),
           loadSceneSpines(currentPayload.document, currentPayload.sceneId, resolveFileUrl, spineCache),
           loadSceneFonts(currentPayload.document, currentPayload.sceneId, resolveFileUrl),
         ]);

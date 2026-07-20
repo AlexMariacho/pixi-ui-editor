@@ -1,4 +1,5 @@
 import type { GridLayoutSettings, LayoutGroupNode, LinearLayoutSettings } from "@pixi-ui-editor/schema";
+import { listImageAssetOptions } from "../../../shared/assets.js";
 import { useEditorStore } from "../../../store/index.js";
 import { InspectorField, InspectorWindow, NumberField } from "../fields.js";
 
@@ -8,14 +9,14 @@ export function LayoutGroupSection({ node }: { node: LayoutGroupNode }) {
   // Zustand selectors are useSyncExternalStore snapshots: never allocate (e.g. .filter) inside
   // the selector, otherwise React sees a changed snapshot on every render and loops forever.
   const assets = useEditorStore((state) => state.document.assets);
-  const imageAssets = assets.filter((asset) => asset.type === "image");
+  const imageOptions = listImageAssetOptions(assets);
   const activeProfile = useEditorStore((state) => state.activeProfile);
   const settings = { ...node.layoutGroup.base, ...node.layoutGroup.overrides?.[activeProfile] } as LinearLayoutSettings | GridLayoutSettings;
   const patch = (value: Partial<LinearLayoutSettings | GridLayoutSettings>) => update(node.id, value);
   const isGrid = node.type === "grid-layout";
   return <InspectorWindow title={isGrid ? "Grid Layout Group" : node.type === "horizontal-layout" ? "Horizontal Layout Group" : "Vertical Layout Group"}>
     <p className="inspector-hint">{activeProfile === "desktop" ? "Base settings" : "Mobile override"}</p>
-    <InspectorField label="Background image"><select value={node.backgroundAssetId ?? ""} onChange={(event) => setBackground(node.id, event.target.value || undefined)}><option value="">None</option>{imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></InspectorField>
+    <InspectorField label="Background image"><select value={node.backgroundAssetId ?? ""} onChange={(event) => setBackground(node.id, event.target.value || undefined)}><option value="">None</option>{imageOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></InspectorField>
     <NumberField label="Padding left" value={settings.padding.left} step={1} onChange={(left) => patch({ padding: { ...settings.padding, left } })} />
     <NumberField label="Padding right" value={settings.padding.right} step={1} onChange={(right) => patch({ padding: { ...settings.padding, right } })} />
     <NumberField label="Padding top" value={settings.padding.top} step={1} onChange={(top) => patch({ padding: { ...settings.padding, top } })} />

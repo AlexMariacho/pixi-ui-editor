@@ -52,6 +52,7 @@ export type EditorState = {
   addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
   addFontAsset(name: string, family: string, weight: "normal" | "bold", style: "normal" | "italic", source: { uri: string; mediaType: string }): void;
   addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
+  addAtlasAsset(name: string, files: { json: AssetFile; texture: AssetFile }, frameNames: string[]): void;
   setImageNodeAsset(nodeId: string, assetId: string): void;
   replaceAssetSource(assetId: string, source: { uri: string; mediaType: string }): void;
   replaceSpineAssetFiles(assetId: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;

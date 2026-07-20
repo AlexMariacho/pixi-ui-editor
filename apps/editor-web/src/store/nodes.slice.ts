@@ -1,8 +1,8 @@
 import { resolveAnchoredTransform, resolveProfileTransform } from "@pixi-ui-editor/runtime-pixi";
 import { createStableId, type GridLayoutSettings, type LayoutProfileId, type LinearLayoutSettings, type ScrollViewSettings, type UINode } from "@pixi-ui-editor/schema";
-import { getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/assets.js";
+import { getCachedAtlasFrameSize, getCachedImageAssetSize, getCachedSpineAssetSize } from "../shared/assets.js";
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
-import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot } from "./helpers.js";
+import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot, resolveAssetReference } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
 type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "updateScrollView" | "updateInput" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
 export const createNodesSlice: EditorSlice<Keys> = (set) => ({
@@ -306,16 +306,17 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
   addNodeFromAsset: (assetId, position) => set((state) => {
     const candidate = structuredClone(state.document);
     const target = getEditingTarget(candidate, state);
-    const asset = candidate.assets.find((candidateAsset) => candidateAsset.id === assetId);
-    if (target === undefined || asset === undefined) {
+    const resolved = resolveAssetReference(candidate, assetId);
+    if (target === undefined || resolved === undefined) {
       console.warn(`Cannot add a node from asset '${assetId}': the editing target or asset does not exist.`);
       return state;
     }
 
-    const isImage = asset.type === "image";
+    const isImage = resolved.kind === "atlasFrame" || resolved.asset.type === "image";
+    const name = resolved.kind === "atlasFrame" ? `${resolved.atlas.name} / ${resolved.frameName}` : resolved.asset.name;
     const sceneRoot = "layout" in target ? getSceneRoot(target) : undefined;
-    const imageSize = getCachedImageAssetSize(asset);
-    const spineSize = getCachedSpineAssetSize(asset);
+    const imageSize = resolved.kind === "atlasFrame" ? getCachedAtlasFrameSize(resolved.atlas, resolved.frameName) : getCachedImageAssetSize(resolved.asset);
+    const spineSize = resolved.kind === "asset" ? getCachedSpineAssetSize(resolved.asset) : undefined;
     const width = isImage ? imageSize?.width ?? 100 : spineSize?.width ?? 200;
     const height = isImage ? imageSize?.height ?? 100 : spineSize?.height ?? 200;
     const parentSize = getParentLayoutSize(target, { parentId: sceneRoot?.id ?? null } as UINode, state.activeProfile);
@@ -331,9 +332,9 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     const y = parentPosition.y - parentSize.height * 0.5;
     const node: UINode = {
       id: createStableId(),
-      name: asset.name,
+      name,
       type: isImage ? "image" : "spine",
-      assetId: asset.id,
+      assetId,
       parentId: sceneRoot?.id ?? null,
       children: [],
       visible: true,

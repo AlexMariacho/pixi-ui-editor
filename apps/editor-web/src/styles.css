@@ -532,9 +532,28 @@ body { margin: 0; }
   border-radius: 3px;
 }
 
-.asset-preview img { width: 100%; height: 100%; object-fit: contain; }
+.asset-preview img, .asset-preview canvas { width: 100%; height: 100%; object-fit: contain; }
 
 .asset-preview-fallback { background: #626262; }
+
+.atlas-expand-toggle {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 16px;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.atlas-expand-toggle:hover { color: var(--text); }
+
+.asset-frame-row { padding-left: 32px; }
+
+.asset-list-grid .asset-frame-row { padding-left: 6px; border: 1px dashed var(--border); }
 
 .asset-details { display: grid; min-width: 0; align-content: center; gap: 2px; }
 
@@ -634,7 +653,7 @@ body { margin: 0; }
 
 .image-preview-frame { display: flex; width: 220px; height: 180px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
 
-.image-preview-frame img { width: 100%; height: 100%; object-fit: contain; }
+.image-preview-frame img, .image-preview-frame canvas { width: 100%; height: 100%; object-fit: contain; }
 
 .spine-preview { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px; }
 

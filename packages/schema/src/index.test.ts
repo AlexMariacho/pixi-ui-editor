@@ -8,6 +8,7 @@ import {
   type ProjectDocument,
 } from "./index.js";
 import {
+  addAtlasAssetWithFrame,
   addButtonNode,
   createProjectDocumentFixture,
   stableId,
@@ -95,8 +96,54 @@ describe("schema v1", () => {
     (document as { schemaVersion: number }).schemaVersion = 2;
 
     const migrated = migrateProjectDocument(document);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.scenes[0]!.nodes).toEqual(v2Nodes);
+  });
+
+  it("migrates a v3 document to v4 without changing its existing assets or nodes", () => {
+    const document = createProjectDocumentFixture();
+    const v3Assets = structuredClone(document.assets);
+    const v3Nodes = structuredClone(document.scenes[0]!.nodes);
+    (document as { schemaVersion: number }).schemaVersion = 3;
+
+    const migrated = migrateProjectDocument(document);
+    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.assets).toEqual(v3Assets);
+    expect(migrated.scenes[0]!.nodes).toEqual(v3Nodes);
+  });
+
+  it("accepts an image node whose assetId is an atlas frame id", () => {
+    const document = createProjectDocumentFixture();
+    addAtlasAssetWithFrame(document);
+    expect(validateProjectDocument(document)).toEqual({ valid: true, issues: [] });
+  });
+
+  it("rejects an atlas asset with an incomplete files object", () => {
+    const result = validateFixtureMutation((document) => {
+      document.assets.push({
+        id: stableId(42),
+        name: "Broken atlas",
+        type: "atlas",
+        files: { json: { name: "atlas.json", uri: "assets/atlas.json", mediaType: "application/json" } },
+        frames: { "icon.png": stableId(43) },
+      } as never);
+    });
+    expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
+  });
+
+  it("rejects an atlas asset without a frames map", () => {
+    const result = validateFixtureMutation((document) => {
+      document.assets.push({
+        id: stableId(44),
+        name: "Broken atlas",
+        type: "atlas",
+        files: {
+          json: { name: "atlas.json", uri: "assets/atlas.json", mediaType: "application/json" },
+          texture: { name: "atlas.png", uri: "assets/atlas.png", mediaType: "image/png" },
+        },
+      } as never);
+    });
+    expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
   });
 
   it.each(["desktop", "mobile"])("rejects missing %s viewport", (profile) => {

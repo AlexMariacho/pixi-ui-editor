@@ -44,6 +44,9 @@ export function buildExportEntries(projectDocument: ProjectDocument, resolveFile
     } else if (asset.type === "font") {
       const extension = asset.source.mediaType.split("/")[1] ?? "font";
       asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}.${sanitizeName(extension)}`, asset.source.uri);
+    } else if (asset.type === "atlas") {
+      asset.files.json.uri = addFile(asset.id, asset.files.json.name, asset.files.json.uri);
+      asset.files.texture.uri = addFile(asset.id, asset.files.texture.name, asset.files.texture.uri);
     } else {
       asset.files.skeleton.uri = addFile(asset.id, asset.files.skeleton.name, asset.files.skeleton.uri);
       asset.files.atlas.uri = addFile(asset.id, asset.files.atlas.name, asset.files.atlas.uri);

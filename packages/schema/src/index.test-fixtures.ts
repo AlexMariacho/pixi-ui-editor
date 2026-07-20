@@ -38,6 +38,24 @@ export function addButtonNode(document: ProjectDocument): ButtonNode {
 export const stableId = (value: number): string =>
   `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 
+/** Appends an atlas asset with one named frame and points an existing image node at that frame id. */
+export function addAtlasAssetWithFrame(document: ProjectDocument): { atlasId: string; frameId: string } {
+  const atlasId = stableId(40);
+  const frameId = stableId(41);
+  document.assets.push({
+    id: atlasId,
+    name: "Atlas",
+    type: "atlas",
+    files: {
+      json: { name: "atlas.json", uri: "assets/atlas.json", mediaType: "application/json" },
+      texture: { name: "atlas.png", uri: "assets/atlas.png", mediaType: "image/png" },
+    },
+    frames: { "icon.png": frameId },
+  });
+  (document.scenes[0]!.nodes[1] as { assetId: string }).assetId = frameId;
+  return { atlasId, frameId };
+}
+
 export function createProjectDocumentFixture(): ProjectDocument {
   const project = stableId(1);
   const scene = stableId(2);

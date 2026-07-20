@@ -156,7 +156,7 @@ export async function loadSceneView(
   options: { interaction: SceneInteractionMode },
 ): Promise<{ root: Container; nodeViews: Map<string, Container> }> {
   const [textures, spines, fonts] = await Promise.all([
-    loadSceneTextures(document, sceneId, (asset) => (asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined)),
+    loadSceneTextures(document, sceneId, (asset) => (asset.type === "image" ? resolveFileUrl(asset.source.uri) : undefined), resolveFileUrl),
     loadSceneSpines(document, sceneId, resolveFileUrl),
     loadSceneFonts(document, sceneId, resolveFileUrl),
   ]);

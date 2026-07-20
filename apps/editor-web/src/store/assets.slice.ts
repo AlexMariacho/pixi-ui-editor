@@ -1,7 +1,7 @@
 import { createStableId } from "@pixi-ui-editor/schema";
 import { commitCandidate, getEditingTarget } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
+type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "addAtlasAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
 export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
   addImageAsset: (name, source) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -18,6 +18,13 @@ export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
     const candidate = structuredClone(state.document);
     candidate.assets.push({ id: createStableId(), name, type: "spine", files: structuredClone(files) });
     return commitCandidate(state, candidate, "Spine asset creation was rejected because it makes the project document invalid.");
+  }),
+  addAtlasAsset: (name, files, frameNames) => set((state) => {
+    const candidate = structuredClone(state.document);
+    const frames: Record<string, string> = {};
+    for (const frameName of frameNames) frames[frameName] = createStableId();
+    candidate.assets.push({ id: createStableId(), name, type: "atlas", files: structuredClone(files), frames });
+    return commitCandidate(state, candidate, "Atlas asset creation was rejected because it makes the project document invalid.");
   }),
   setImageNodeAsset: (nodeId, assetId) => set((state) => {
     const candidate = structuredClone(state.document);

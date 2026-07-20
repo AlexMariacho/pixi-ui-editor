@@ -1,5 +1,5 @@
 import { loadProjectDocument, parseProjectDocumentJson, resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
-import { createStableId, validateProjectDocument, type LayoutProfileId, type PrefabDefinition, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
+import { createStableId, validateProjectDocument, type Asset, type LayoutProfileId, type PrefabDefinition, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
 import sampleJson from "../../../../examples/sample-project/project.json";
 import { DOCUMENT_STORAGE_KEY, type AnchorRect, type EditingTarget, type EditorState } from "./types.js";
 
@@ -136,6 +136,24 @@ export function createAnchorPatch(
 export function getEditingTarget(candidate: ProjectDocument, state: Pick<EditorState, "editingPrefabId" | "sceneId">): EditingTarget | undefined {
   if (state.editingPrefabId !== null) return candidate.prefabs.find((prefab) => prefab.id === state.editingPrefabId);
   return candidate.scenes.find((scene) => scene.id === state.sceneId);
+}
+
+export type AtlasAsset = Extract<Asset, { type: "atlas" }>;
+export type AssetReference =
+  | { kind: "asset"; asset: Asset }
+  | { kind: "atlasFrame"; atlas: AtlasAsset; frameName: string; frameId: string };
+
+/** Resolves a dropped/assigned id to either a document asset or an atlas frame: atlas frames are not top-level assets, but nodes reference their id exactly like an image assetId. */
+export function resolveAssetReference(document: ProjectDocument, assetOrFrameId: string): AssetReference | undefined {
+  const asset = document.assets.find((candidate) => candidate.id === assetOrFrameId);
+  if (asset !== undefined) return { kind: "asset", asset };
+  for (const candidate of document.assets) {
+    if (candidate.type !== "atlas") continue;
+    for (const [frameName, frameId] of Object.entries(candidate.frames)) {
+      if (frameId === assetOrFrameId) return { kind: "atlasFrame", atlas: candidate, frameName, frameId };
+    }
+  }
+  return undefined;
 }
 
 /** Р¤РѕСЂРјР°Р»СЊРЅС‹Р№ bounding box СЃРѕРґРµСЂР¶РёРјРѕРіРѕ РїСЂРµСЃРµС‚Р° РїРѕ desktop-РїСЂРѕС„РёР»СЋ (С‚РѕР»СЊРєРѕ С‚СЂР°РЅСЃР»СЏС†РёРё, fallback 100Г—100). */

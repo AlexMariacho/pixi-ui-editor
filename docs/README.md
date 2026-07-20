@@ -14,3 +14,4 @@
 - [Итерация 06 — Spine, окна, пресеты и экспорт в PixiJS](tasks/iteration-06-spine-windows-presets-export/README.md)
 - [Iteration 07 — anchor constraints v0](tasks/iteration-07-anchor-constraints/README.md)
 - [Итерация 08 — завершённый vertical slice UI-компонентов, текста и layout groups](tasks/iteration-08-ui-components-text-and-layouts/README.md)
+- [Итерация 09 — текстурные атласы и звук](tasks/iteration-09-atlases-and-audio/README.md)

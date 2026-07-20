@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { InputNode } from "@pixi-ui-editor/schema";
+import { listImageAssetOptions } from "../../../shared/assets.js";
 import { useEditorStore } from "../../../store/index.js";
 import { InspectorField, InspectorWindow, NumberField } from "../fields.js";
 import { TextStyleFields } from "./TextStyleFields.js";
@@ -7,14 +8,14 @@ import { TextStyleFields } from "./TextStyleFields.js";
 export function InputSection({ node }: { node: InputNode }) {
   const updateInput = useEditorStore((state) => state.updateInput);
   const assets = useEditorStore((state) => state.document.assets);
-  const imageAssets = useMemo(() => assets.filter((asset) => asset.type === "image"), [assets]);
+  const imageOptions = useMemo(() => listImageAssetOptions(assets), [assets]);
   const padding = node.padding;
 
   return <InspectorWindow title="Input">
     <InspectorField label="Background">
       <select value={node.backgroundAssetId ?? ""} onChange={(event) => updateInput(node.id, { backgroundAssetId: event.target.value || undefined })}>
         <option value="">None (neutral placeholder)</option>
-        {imageAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+        {imageOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
       </select>
     </InspectorField>
     <InspectorField label="Placeholder"><input type="text" value={node.placeholder} onChange={(event) => updateInput(node.id, { placeholder: event.target.value })} /></InspectorField>

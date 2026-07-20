@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
-export const CURRENT_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SCHEMA_VERSION = 4 as const;
 const Id = Type.String({ format: "uuid" });
 const Name = Type.String({ minLength: 1 });
 export const LayoutProfileIdSchema = Type.Union([Type.Literal("desktop"), Type.Literal("mobile")]);
@@ -122,7 +122,9 @@ export type AssetFile = Static<typeof AssetFileSchema>;
 const ImageAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("image"), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
 const SpineAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("spine"), files: Type.Object({ skeleton: AssetFileSchema, atlas: AssetFileSchema, textures: Type.Array(AssetFileSchema, { minItems: 1 }) }) });
 const FontAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("font"), family: Name, weight: Type.Union([Type.Literal("normal"), Type.Literal("bold")]), style: Type.Union([Type.Literal("normal"), Type.Literal("italic")]), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
-export const AssetSchema = Type.Union([ImageAsset, SpineAsset, FontAsset]);
+// Имя фрейма из spritesheet JSON → стабильный id фрейма; nodes ссылаются на этот id как на обычный image assetId.
+const AtlasAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("atlas"), files: Type.Object({ json: AssetFileSchema, texture: AssetFileSchema }), frames: Type.Record(Type.String({ minLength: 1 }), Id) });
+export const AssetSchema = Type.Union([ImageAsset, SpineAsset, FontAsset, AtlasAsset]);
 export type Asset = Static<typeof AssetSchema>;
 export const PrefabDefinitionSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), exposedProperties: Type.Array(Type.Object({ name: Name, type: Type.Union([Type.Literal("string"), Type.Literal("number"), Type.Literal("boolean"), Type.Literal("asset"), Type.Literal("visibility")]) })) });
 export type PrefabDefinition = Static<typeof PrefabDefinitionSchema>;
@@ -197,7 +199,12 @@ function semantic(document: ProjectDocument): ValidationIssue[] {
   const issues: ValidationIssue[] = [], ids = new Set<string>(), register = (id: string, path: string) => { if (ids.has(id)) add(issues, "DUPLICATE_ID", path, `Duplicate entity ID '${id}'.`); ids.add(id); };
   register(document.project.id, "/project/id"); const assets = new Map<string, Asset>(), prefabs = new Set<string>();
   const fontMediaTypes = new Set(["font/woff2", "font/woff", "font/ttf", "font/otf", "application/font-woff", "application/x-font-ttf", "application/x-font-opentype"]);
-  document.assets.forEach((asset, i) => { register(asset.id, `/assets/${i}/id`); assets.set(asset.id, asset); if (asset.type === "font" && !fontMediaTypes.has(asset.source.mediaType)) add(issues, "INVALID_FONT_MEDIA_TYPE", `/assets/${i}/source/mediaType`, `Unsupported font media type '${asset.source.mediaType}'.`); }); document.prefabs.forEach((prefab, i) => { register(prefab.id, `/prefabs/${i}/id`); prefabs.add(prefab.id); }); document.scenes.forEach((scene, i) => register(scene.id, `/scenes/${i}/id`));
+  document.assets.forEach((asset, i) => { register(asset.id, `/assets/${i}/id`); assets.set(asset.id, asset); if (asset.type === "font" && !fontMediaTypes.has(asset.source.mediaType)) add(issues, "INVALID_FONT_MEDIA_TYPE", `/assets/${i}/source/mediaType`, `Unsupported font media type '${asset.source.mediaType}'.`); });
+  // Каждый atlas-фрейм ведёт себя как обычный image-ассет во всех местах, где нода ссылается на assetId:
+  // виртуальная запись позволяет существующим MISSING_ASSET_REFERENCE/INCOMPATIBLE_ASSET_REFERENCE проверкам
+  // работать без изменений в каждой ветке hierarchy().
+  document.assets.forEach((asset) => { if (asset.type !== "atlas") return; for (const frameId of Object.values(asset.frames)) { if (!assets.has(frameId)) assets.set(frameId, { id: frameId, name: frameId, type: "image", source: { uri: "", mediaType: "image/png" } }); } });
+  document.prefabs.forEach((prefab, i) => { register(prefab.id, `/prefabs/${i}/id`); prefabs.add(prefab.id); }); document.scenes.forEach((scene, i) => register(scene.id, `/scenes/${i}/id`));
   document.prefabs.forEach((prefab, i) => { prefab.nodes.forEach((node, j) => register(node.id, `/prefabs/${i}/nodes/${j}/id`)); hierarchy(prefab, `/prefabs/${i}`, assets, prefabs, issues); });
   document.scenes.forEach((scene, i) => { scene.nodes.forEach((node, j) => register(node.id, `/scenes/${i}/nodes/${j}/id`)); hierarchy(scene, `/scenes/${i}`, assets, prefabs, issues); const bindings = new Set<string>(); scene.nodes.forEach((node, j) => { if (node.binding !== undefined) { const binding = node.binding.trim(); if (!binding) add(issues, "EMPTY_BINDING", `/scenes/${i}/nodes/${j}/binding`, "Binding must not be empty after trimming."); else if (bindings.has(binding)) add(issues, "DUPLICATE_BINDING", `/scenes/${i}/nodes/${j}/binding`, `Binding '${binding}' is duplicated in this scene.`); else bindings.add(binding); } }); });
   return issues;
@@ -235,7 +242,7 @@ function migrateV1ToV2(document: Record<string, unknown>): void {
     }
   }
 }
-export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds only optional fields and new discriminated asset/node branches, so existing v2 entities require no rewrite. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
+export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds only optional fields and new discriminated asset/node branches, so existing v2 entities require no rewrite. v3→v4 adds only the new discriminated "atlas" asset branch, so existing v3 entities require no rewrite either. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));

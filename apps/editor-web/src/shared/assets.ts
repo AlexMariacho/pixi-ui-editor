@@ -1,6 +1,7 @@
 import { loadSceneFonts, loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
-import type { Texture } from "pixi.js";
+import type { Spritesheet, SpritesheetData, Texture } from "pixi.js";
+import { resolveAssetReference, type AtlasAsset } from "../store/helpers.js";
 import buttonDisabledUrl from "../../../../examples/sample-project/assets/button-disabled.svg";
 import buttonHoverUrl from "../../../../examples/sample-project/assets/button-hover.svg";
 import buttonNormalUrl from "../../../../examples/sample-project/assets/button-normal.svg";
@@ -23,8 +24,11 @@ const SAMPLE_ASSET_URLS: Record<string, string> = {
 
 const textureCache = new Map<string, Texture>();
 const spineCache = new Map<string, SkeletonData>();
+const atlasSpritesheetCache = new Map<string, Spritesheet>();
+const atlasJsonCache = new Map<string, SpritesheetData>();
 
 export const resolveAssetUrl: AssetUrlResolver = (asset: Asset): string | undefined => {
+  if (asset.type === "atlas") return resolveFileUrl(asset.files.texture.uri);
   if (asset.type !== "image") return undefined;
   if (asset.source.uri.startsWith("data:")) return asset.source.uri;
   return SAMPLE_ASSET_URLS[asset.source.uri];
@@ -33,7 +37,49 @@ export const resolveAssetUrl: AssetUrlResolver = (asset: Asset): string | undefi
 export const resolveFileUrl: FileUrlResolver = (uri) => uri.startsWith("data:") ? uri : SAMPLE_ASSET_URLS[uri];
 
 export function loadEditorSceneTextures(document: ProjectDocument, sceneId: string) {
-  return loadSceneTextures(document, sceneId, resolveAssetUrl, textureCache);
+  return loadSceneTextures(document, sceneId, resolveAssetUrl, resolveFileUrl, textureCache, atlasSpritesheetCache);
+}
+
+/** Every image-compatible pick for an assetId dropdown: real image assets plus every atlas's frames. */
+export function listImageAssetOptions(assets: Asset[]): { id: string; label: string }[] {
+  const options: { id: string; label: string }[] = [];
+  for (const asset of assets) {
+    if (asset.type === "image") options.push({ id: asset.id, label: asset.name });
+    else if (asset.type === "atlas") for (const frameName of Object.keys(asset.frames)) options.push({ id: asset.frames[frameName]!, label: `${asset.name} / ${frameName}` });
+  }
+  return options;
+}
+
+async function loadAtlasJsonData(asset: AtlasAsset): Promise<SpritesheetData> {
+  const cached = atlasJsonCache.get(asset.files.json.uri);
+  if (cached !== undefined) return cached;
+  const url = resolveFileUrl(asset.files.json.uri);
+  if (url === undefined) throw new Error(`Unable to resolve the JSON URL for atlas asset '${asset.id}'.`);
+  const data = await fetch(url).then((response) => response.json() as Promise<SpritesheetData>);
+  atlasJsonCache.set(asset.files.json.uri, data);
+  return data;
+}
+
+export function getCachedAtlasJson(asset: AtlasAsset): SpritesheetData | undefined {
+  return atlasJsonCache.get(asset.files.json.uri);
+}
+
+/** Ensures an atlas's spritesheet JSON is parsed and cached, e.g. before rendering cropped frame previews. */
+export async function loadEditorAtlasJson(asset: AtlasAsset): Promise<SpritesheetData> {
+  return loadAtlasJsonData(asset);
+}
+
+export function getCachedAtlasFrameSize(asset: AtlasAsset, frameName: string): { width: number; height: number } | undefined {
+  const frame = atlasJsonCache.get(asset.files.json.uri)?.frames[frameName];
+  if (frame === undefined) return undefined;
+  const size = frame.sourceSize ?? frame.frame;
+  return { width: size.w, height: size.h };
+}
+
+/** Ensures a dropped atlas frame uses the native pixel size recorded in its spritesheet JSON. */
+export async function loadEditorAtlasFrameSize(asset: AtlasAsset, frameName: string): Promise<{ width: number; height: number } | undefined> {
+  await loadAtlasJsonData(asset);
+  return getCachedAtlasFrameSize(asset, frameName);
 }
 
 export function getCachedImageAssetSize(asset: Asset): { width: number; height: number } | undefined {
@@ -69,6 +115,16 @@ export async function loadEditorSpineAssetSize(asset: Asset): Promise<{ width: n
 
 export function loadEditorSceneSpines(document: ProjectDocument, sceneId: string) {
   return loadSceneSpines(document, sceneId, resolveFileUrl, spineCache);
+}
+
+/** Resolves an asset id or atlas frame id, then loads its native size for a dropped node. */
+export async function loadEditorAssetOrFrameSize(document: ProjectDocument, assetOrFrameId: string): Promise<{ width: number; height: number } | undefined> {
+  const resolved = resolveAssetReference(document, assetOrFrameId);
+  if (resolved === undefined) return undefined;
+  if (resolved.kind === "atlasFrame") return loadEditorAtlasFrameSize(resolved.atlas, resolved.frameName);
+  if (resolved.asset.type === "image") return loadEditorImageAssetSize(resolved.asset);
+  if (resolved.asset.type === "spine") return loadEditorSpineAssetSize(resolved.asset);
+  return undefined;
 }
 
 export function loadEditorSceneFonts(document: ProjectDocument, sceneId: string) { return loadSceneFonts(document, sceneId, resolveFileUrl); }

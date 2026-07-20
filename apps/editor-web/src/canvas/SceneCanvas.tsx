@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { isPositionManagingContainer, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
-import { getEditingTarget, getSceneRoot, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
-import { loadEditorImageAssetSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures, loadEditorSpineAssetSize } from "../shared/assets.js";
+import { getEditingTarget, getSceneRoot, resolveAssetReference, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
+import { loadEditorAssetOrFrameSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
@@ -846,10 +846,9 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       event.preventDefault();
       const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
       const position = toWorldPosition(event);
-      const asset = document.assets.find((candidate) => candidate.id === assetId);
-      if (asset !== undefined && position !== undefined) {
-        void (asset.type === "image" ? loadEditorImageAssetSize(asset) : loadEditorSpineAssetSize(asset))
-          .catch((error) => console.warn(`Unable to load native size for asset '${asset.id}'.`, error))
+      if (resolveAssetReference(document, assetId) !== undefined && position !== undefined) {
+        void loadEditorAssetOrFrameSize(document, assetId)
+          .catch((error) => console.warn(`Unable to load native size for asset '${assetId}'.`, error))
           .finally(() => addNodeFromAsset(assetId, position));
       }
       return;
