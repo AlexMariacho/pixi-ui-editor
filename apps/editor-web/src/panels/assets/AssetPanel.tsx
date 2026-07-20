@@ -7,6 +7,7 @@ import { useEditorStore, type AtlasAsset } from "../../store/index.js";
 import { ASSETS_WINDOW_MIN_SIZE, useUiPrefsStore } from "../../shared/uiPrefs.js";
 import { FloatingWindow } from "../../shared/FloatingWindow.js";
 import { deriveAssetBrowser, type BrowserAsset } from "./assetBrowserViewModel.js";
+import { groupSpineFileBundles } from "./spineImport.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const MAX_ATLAS_TEXTURE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -195,13 +196,22 @@ export function AssetPanel() {
   const toggleCategoryExpanded = (categoryId: string) => setExpandedCategoryIds((current) => { const next = new Set(current); if (next.has(categoryId)) next.delete(categoryId); else next.add(categoryId); return next; });
 
   const importFiles = async (files: File[], assetIdToReplace: string | null) => {
-    const spineMode = files.some((file) => extension(file.name) === ".atlas");
-    if (spineMode) {
-      const json = files.filter((file) => extension(file.name) === ".json"), atlas = files.filter((file) => extension(file.name) === ".atlas"), textures = files.filter((file) => imageExtension.test(file.name));
+    const spineImport = groupSpineFileBundles(files);
+    if (spineImport.error !== undefined) { window.alert(spineImport.error); return; }
+    if (spineImport.bundles.length > 0) {
       const target = assetIdToReplace === null ? undefined : assets.find((asset) => asset.id === assetIdToReplace);
-      if (json.length !== 1 || atlas.length !== 1 || textures.length < 1 || (target !== undefined && target.type !== "spine")) { window.alert("Spine import needs exactly one .json, exactly one .atlas, and at least one PNG or WebP texture."); return; }
-      try { const [skeleton, atlasFile, ...textureFiles] = await Promise.all([json[0]!, atlas[0]!, ...textures].map(readFile)); const bundle = { skeleton, atlas: atlasFile, textures: textureFiles }; if (target === undefined) addSpineAsset(assetNameFromFile(json[0]!.name), bundle); else { clearEditorSpineCache(target.files.skeleton.uri); replaceSpineAssetFiles(target.id, bundle); } } catch (error) { console.warn("Unable to import Spine files.", error); window.alert("The Spine files could not be read."); }
-      setReplaceAssetId(null); return;
+      if (target !== undefined && target.type !== "spine") { window.alert("A Spine bundle can only replace a Spine asset."); return; }
+      if (target !== undefined && spineImport.bundles.length !== 1) { window.alert("Spine replacement needs exactly one complete bundle."); return; }
+      try {
+        for (const sourceBundle of spineImport.bundles) {
+          const [skeleton, atlasFile, ...textureFiles] = await Promise.all([sourceBundle.skeleton, sourceBundle.atlas, ...sourceBundle.textures].map(readFile));
+          const bundle = { skeleton, atlas: atlasFile, textures: textureFiles };
+          if (target === undefined) addSpineAsset(sourceBundle.name, bundle);
+          else { clearEditorSpineCache(target.files.skeleton.uri); replaceSpineAssetFiles(target.id, bundle); }
+        }
+      } catch (error) { console.warn("Unable to import Spine files.", error); window.alert("The Spine files could not be read."); }
+      files = spineImport.remaining;
+      if (files.length === 0) { setReplaceAssetId(null); return; }
     }
 
     const jsonFiles = files.filter((file) => extension(file.name) === ".json");
@@ -288,7 +298,8 @@ export function AssetPanel() {
     const content = <>
       {isAtlas && <button type="button" className="atlas-expand-toggle" aria-label={expanded ? `Collapse ${asset.name}` : `Expand ${asset.name}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); toggleAtlasExpanded(asset.id); }}>{expanded ? "▾" : "▸"}</button>}
       {viewMode !== "compact" && <AssetPreview asset={asset} />}
-      <div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}{viewMode === "list" ? ` (${usage})` : ""}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
+      <div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
+      {viewMode === "list" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
       {viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
       <div className="asset-actions"><button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button></div>
     </>;
