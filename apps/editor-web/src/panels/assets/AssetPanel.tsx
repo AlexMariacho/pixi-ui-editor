@@ -6,6 +6,7 @@ import { clearEditorSpineCache, getCachedAtlasJson, loadEditorAtlasJson, resolve
 import { useEditorStore, type AtlasAsset } from "../../store/index.js";
 import { ASSETS_WINDOW_MIN_SIZE, useUiPrefsStore } from "../../shared/uiPrefs.js";
 import { FloatingWindow } from "../../shared/FloatingWindow.js";
+import { deriveAssetBrowser, type BrowserAsset } from "./assetBrowserViewModel.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const MAX_ATLAS_TEXTURE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -183,12 +184,15 @@ async function findAtlasJsonFile(jsonFiles: File[]): Promise<{ file: File; frame
 }
 
 export function AssetPanel() {
-  const viewMode = useUiPrefsStore((state) => state.assetsViewMode); const setViewMode = useUiPrefsStore((state) => state.setAssetsViewMode);
+  const viewMode = useUiPrefsStore((state) => state.assetsViewMode); const setViewMode = useUiPrefsStore((state) => state.setAssetsViewMode); const groupByCategory = useUiPrefsStore((state) => state.assetsGroupByCategory); const setGroupByCategory = useUiPrefsStore((state) => state.setAssetsGroupByCategory);
   const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs);
   const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const addAtlasAsset = useEditorStore((state) => state.addAtlasAsset); const addSoundAsset = useEditorStore((state) => state.addSoundAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null); const dragDepthRef = useRef(0); const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null); const [isDragActive, setIsDragActive] = useState(false); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedAtlasIds, setExpandedAtlasIds] = useState<Set<string>>(() => new Set());
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set(["images", "atlases", "spine", "fonts", "sounds"]));
+  const [searchQuery, setSearchQuery] = useState("");
   const toggleAtlasExpanded = (atlasId: string) => setExpandedAtlasIds((current) => { const next = new Set(current); if (next.has(atlasId)) next.delete(atlasId); else next.add(atlasId); return next; });
+  const toggleCategoryExpanded = (categoryId: string) => setExpandedCategoryIds((current) => { const next = new Set(current); if (next.has(categoryId)) next.delete(categoryId); else next.add(categoryId); return next; });
 
   const importFiles = async (files: File[], assetIdToReplace: string | null) => {
     const spineMode = files.some((file) => extension(file.name) === ".atlas");
@@ -267,6 +271,7 @@ export function AssetPanel() {
 
   const rowClassName = viewMode === "grid" ? "asset-grid-tile" : viewMode === "compact" ? "asset-compact-row" : "asset-row";
   const dragStart = (id: string) => (event: DragEvent<HTMLElement>) => { event.dataTransfer.setData("application/x-pixi-ui-editor-asset", id); event.dataTransfer.effectAllowed = "copy"; };
+  const browserSections = useMemo(() => deriveAssetBrowser(assets, searchQuery, expandedAtlasIds, groupByCategory), [assets, searchQuery, expandedAtlasIds, groupByCategory]);
 
   const frameItem = (atlas: AtlasAsset, frameName: string, frameId: string) => {
     const usage = usageOf(frameId);
@@ -277,32 +282,32 @@ export function AssetPanel() {
     </li>;
   };
 
+  const assetItem = ({ asset, frames, expanded }: BrowserAsset) => {
+    const isAtlas = asset.type === "atlas";
+    const usage = isAtlas ? atlasUsage(asset) : usageOf(asset.id);
+    const content = <>
+      {isAtlas && <button type="button" className="atlas-expand-toggle" aria-label={expanded ? `Collapse ${asset.name}` : `Expand ${asset.name}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); toggleAtlasExpanded(asset.id); }}>{expanded ? "▾" : "▸"}</button>}
+      {viewMode !== "compact" && <AssetPreview asset={asset} />}
+      <div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}{viewMode === "list" ? ` (${usage})` : ""}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
+      {viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
+      <div className="asset-actions"><button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button></div>
+    </>;
+    if (!isAtlas) return <li key={asset.id} draggable className={`${rowClassName}${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</li>;
+    return <li key={asset.id} className="atlas-group"><div draggable className={`${rowClassName} atlas-group-header${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</div>{expanded && <ul className={`atlas-frames atlas-frames-${viewMode}`}>{frames.map(([frameName, frameId]) => frameItem(asset, frameName, frameId))}</ul>}</li>;
+  };
+
   return <section className={`asset-panel${isDragActive ? " asset-panel-drop-active" : ""}`} aria-label="Assets" onDragEnter={(event) => { if (hasFiles(event)) { dragDepthRef.current += 1; setIsDragActive(true); } }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (hasFiles(event) && --dragDepthRef.current <= 0) { dragDepthRef.current = 0; setIsDragActive(false); } }} onDrop={drop}>
     <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp,.woff2,.woff,.ttf,.otf,.wav,.mp3,.ogg,.aac,.m4a,audio/*" onChange={upload} />
     <div className="assets-toolbar">
+      <div className="assets-search"><label className="sr-only" htmlFor="assets-search">Search assets</label><input id="assets-search" type="search" placeholder="Search assets" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape" && searchQuery.trim() !== "") { event.preventDefault(); setSearchQuery(""); } }} />{searchQuery !== "" && <button type="button" aria-label="Clear asset search" onClick={() => setSearchQuery("")}>×</button>}</div>
+      <button type="button" className={groupByCategory ? "assets-categories-active" : ""} aria-pressed={groupByCategory} onClick={() => setGroupByCategory(!groupByCategory)}>Categories</button>
       <div className="assets-view-mode-toggle" role="group" aria-label="Asset view mode">{(["compact", "list", "grid"] as const).map((mode, index) => <button key={mode} type="button" className={viewMode === mode ? "assets-view-mode-active" : ""} aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{["≡", "☷", "▦"][index]}</button>)}</div>
       <p className="asset-panel-drop-hint">Drop images, fonts, sounds, a spritesheet JSON + texture, or a Spine bundle here</p>
     </div>
-    <div className="assets-browser"><ul className={`asset-list asset-list-${viewMode}`}>{assets.map((asset) => {
-      const isAtlas = asset.type === "atlas";
-      const usage = isAtlas ? atlasUsage(asset) : usageOf(asset.id);
-      const expanded = isAtlas && expandedAtlasIds.has(asset.id);
-      const content = <>
-        {isAtlas && <button type="button" className="atlas-expand-toggle" aria-label={expanded ? `Collapse ${asset.name}` : `Expand ${asset.name}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); toggleAtlasExpanded(asset.id); }}>{expanded ? "▾" : "▸"}</button>}
-        {viewMode !== "compact" && <AssetPreview asset={asset} />}
-        <div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}{viewMode === "list" ? ` (${usage})` : ""}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
-        {viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
-        <div className="asset-actions">
-          <button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button>
-          <button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button>
-        </div>
-      </>;
-      if (!isAtlas) return <li key={asset.id} draggable className={`${rowClassName}${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</li>;
-      return <li key={asset.id} className="atlas-group">
-        <div draggable className={`${rowClassName} atlas-group-header${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</div>
-        {expanded && <ul className={`atlas-frames atlas-frames-${viewMode}`}>{Object.entries(asset.frames).map(([frameName, frameId]) => frameItem(asset, frameName, frameId))}</ul>}
-      </li>;
-    })}</ul></div>
+    <div className="assets-browser">{browserSections.length === 0 ? <p className="assets-empty-result">No assets match “{searchQuery.trim()}”</p> : browserSections.map((section) => {
+      const expanded = section.id === "flat" || searchQuery.trim() !== "" || expandedCategoryIds.has(section.id);
+      return <section key={section.id} className="asset-category"><>{section.id !== "flat" && <button type="button" className="asset-category-header" aria-expanded={expanded} onClick={() => toggleCategoryExpanded(section.id)}><span>{expanded ? "▾" : "▸"}</span>{section.label} <small>({section.assets.length})</small></button>}</>{expanded && <ul className={`asset-list asset-list-${viewMode}`}>{section.assets.map(assetItem)}</ul>}</section>;
+    })}</div>
     <AssetPreviewPane selectedAsset={selectedAsset} selectedFrame={selectedFrame} />
   </section>;
 }

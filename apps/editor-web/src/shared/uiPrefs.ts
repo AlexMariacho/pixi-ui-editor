@@ -13,6 +13,7 @@ type PersistedUiPrefs = {
   assetsWindowPosition: FloatingWindowPositionPref;
   assetsWindowSize: FloatingWindowSizePref;
   assetsViewMode: AssetsViewMode;
+  assetsGroupByCategory: boolean;
   presetsWindowOpen: boolean;
   presetsWindowPosition: FloatingWindowPositionPref;
   presetsWindowSize: FloatingWindowSizePref;
@@ -23,6 +24,7 @@ export type UiPrefsState = PersistedUiPrefs & {
   setAssetsWindowPosition(position: FloatingWindowPositionPref): void;
   setAssetsWindowSize(size: FloatingWindowSizePref): void;
   setAssetsViewMode(mode: AssetsViewMode): void;
+  setAssetsGroupByCategory(groupByCategory: boolean): void;
   setPresetsWindowOpen(open: boolean): void;
   setPresetsWindowPosition(position: FloatingWindowPositionPref): void;
   setPresetsWindowSize(size: FloatingWindowSizePref): void;
@@ -35,6 +37,7 @@ const defaults: PersistedUiPrefs = {
   assetsWindowPosition: { x: 16, y: 16 },
   assetsWindowSize: { width: 360, height: 550 },
   assetsViewMode: "list",
+  assetsGroupByCategory: false,
   presetsWindowOpen: false,
   presetsWindowPosition: { x: 16, y: 392 },
   presetsWindowSize: { width: 280, height: 280 },
@@ -75,6 +78,7 @@ export function loadUiPrefs(): PersistedUiPrefs {
       assetsWindowPosition: { ...prefs.assetsWindowPosition },
       assetsWindowSize: isSize(prefs.assetsWindowSize) ? clampSizeToMin(prefs.assetsWindowSize, ASSETS_WINDOW_MIN_SIZE) : { ...defaults.assetsWindowSize },
       assetsViewMode: prefs.assetsViewMode === "grid" || prefs.assetsViewMode === "compact" ? prefs.assetsViewMode : "list",
+      assetsGroupByCategory: typeof prefs.assetsGroupByCategory === "boolean" ? prefs.assetsGroupByCategory : false,
       presetsWindowOpen: typeof prefs.presetsWindowOpen === "boolean" ? prefs.presetsWindowOpen : defaults.presetsWindowOpen,
       presetsWindowPosition: isPosition(prefs.presetsWindowPosition) ? { ...prefs.presetsWindowPosition } : { ...defaults.presetsWindowPosition },
       presetsWindowSize: isSize(prefs.presetsWindowSize) ? { ...prefs.presetsWindowSize } : { ...defaults.presetsWindowSize },
@@ -92,6 +96,7 @@ export const useUiPrefsStore = create<UiPrefsState>((set) => ({
   setAssetsWindowPosition: (assetsWindowPosition) => set({ assetsWindowPosition }),
   setAssetsWindowSize: (assetsWindowSize) => set({ assetsWindowSize }),
   setAssetsViewMode: (assetsViewMode) => set({ assetsViewMode }),
+  setAssetsGroupByCategory: (assetsGroupByCategory) => set({ assetsGroupByCategory }),
   setPresetsWindowOpen: (presetsWindowOpen) => set({ presetsWindowOpen }),
   setPresetsWindowPosition: (presetsWindowPosition) => set({ presetsWindowPosition }),
   setPresetsWindowSize: (presetsWindowSize) => set({ presetsWindowSize }),
@@ -106,6 +111,7 @@ useUiPrefsStore.subscribe((state) => {
       assetsWindowPosition: state.assetsWindowPosition,
       assetsWindowSize: state.assetsWindowSize,
       assetsViewMode: state.assetsViewMode,
+      assetsGroupByCategory: state.assetsGroupByCategory,
       presetsWindowOpen: state.presetsWindowOpen,
       presetsWindowPosition: state.presetsWindowPosition,
       presetsWindowSize: state.presetsWindowSize,
