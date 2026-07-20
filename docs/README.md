@@ -15,3 +15,4 @@
 - [Iteration 07 — anchor constraints v0](tasks/iteration-07-anchor-constraints/README.md)
 - [Итерация 08 — завершённый vertical slice UI-компонентов, текста и layout groups](tasks/iteration-08-ui-components-text-and-layouts/README.md)
 - [Итерация 09 — текстурные атласы и звук](tasks/iteration-09-atlases-and-audio/README.md)
+- [Итерация 10 — навигация и preview в окне Assets](tasks/iteration-10-assets-browser-ux/README.md)

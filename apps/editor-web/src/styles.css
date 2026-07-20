@@ -409,6 +409,8 @@ body { margin: 0; }
 .floating-window {
   position: absolute;
   z-index: 3;
+  max-width: 100%;
+  max-height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -440,28 +442,7 @@ body { margin: 0; }
   text-transform: uppercase;
 }
 
-.assets-view-mode-toggle {
-  display: flex;
-  gap: 2px;
-  margin-left: auto;
-  flex: 0 0 auto;
-}
-
 .floating-window-titlebar > button { flex: 0 0 auto; }
-
-.floating-window-titlebar .assets-view-mode-toggle button {
-  width: 24px;
-  padding: 2px;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1;
-}
-
-.floating-window-titlebar .assets-view-mode-toggle .assets-view-mode-active {
-  color: var(--text-bright);
-  background: var(--bg-row-selected);
-  border-color: var(--accent);
-}
 
 .floating-window-titlebar button {
   padding: 3px 7px;
@@ -478,11 +459,55 @@ body { margin: 0; }
 
 .floating-window-content { min-height: 0; overflow: hidden; }
 
-.asset-panel { position: relative; height: 100%; min-height: 0; overflow-y: auto; }
+.asset-panel { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 .asset-panel-drop-active { outline: 2px solid #79a6d2; outline-offset: -2px; background: rgba(121, 166, 210, 0.12); }
 
-.asset-panel-drop-hint { margin: 0; padding: 9px 12px; color: var(--text-muted); font-size: 11px; text-align: center; border-bottom: 1px dashed var(--border-strong); }
+.assets-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.assets-view-mode-toggle { display: flex; flex: 0 0 auto; gap: 2px; }
+
+.assets-view-mode-toggle button {
+  width: 24px;
+  padding: 2px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  background: var(--bg-button);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.assets-view-mode-toggle button:hover { background: var(--bg-button-hover); border-color: #5a5a5a; }
+
+.assets-view-mode-toggle .assets-view-mode-active {
+  color: var(--text-bright);
+  background: var(--bg-row-selected);
+  border-color: var(--accent);
+}
+
+.asset-panel-drop-hint { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--text-muted); font-size: 11px; text-align: right; }
+
+.assets-browser { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+
+.asset-preview-pane {
+  display: flex;
+  flex: 0 1 267px;
+  flex-direction: column;
+  min-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.asset-preview-empty { display: flex; flex: 1; align-items: center; justify-content: center; margin: 0; color: var(--text-muted); font-size: 11px; }
 
 .floating-window-resize-handle { position: absolute; z-index: 2; display: block; background: rgba(0, 0, 0, 0.001); touch-action: none; }
 
@@ -538,7 +563,7 @@ body { margin: 0; }
 
 .asset-preview-sound::after { content: "♪"; font-size: 18px; color: var(--text-bright); }
 
-.sound-preview { padding: 8px 12px; border-top: 1px solid var(--border); }
+.sound-preview { padding: 8px 12px; }
 
 .sound-preview audio { width: 100%; }
 
@@ -557,9 +582,43 @@ body { margin: 0; }
 
 .atlas-expand-toggle:hover { color: var(--text); }
 
-.asset-frame-row { padding-left: 32px; }
+/* Atlas as a visual group: header + indented frame children with an ownership guide. */
 
-.asset-list-grid .asset-frame-row { padding-left: 6px; border: 1px dashed var(--border); }
+.atlas-frames { position: relative; margin: 0; padding: 0; list-style: none; }
+
+.atlas-frames-compact::before,
+.atlas-frames-list::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.atlas-frames-compact::before { left: 13px; }
+.atlas-frames-list::before { left: 19px; }
+
+.atlas-frames-compact .asset-frame-row { padding-left: 29px; }
+.atlas-frames-list .asset-frame-row { padding-left: 35px; }
+
+.asset-list-grid .atlas-group {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+
+.asset-list-grid .atlas-frames {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
 
 .asset-details { display: grid; min-width: 0; align-content: center; gap: 2px; }
 
@@ -655,13 +714,13 @@ body { margin: 0; }
 
 .asset-grid-tile .asset-actions button { min-width: 0; padding: 3px 2px; }
 
-.image-preview { padding: 10px 12px; border-top: 1px solid var(--border); }
+.image-preview { display: flex; flex: 1; min-height: 0; padding: 10px 12px; }
 
-.image-preview-frame { display: flex; width: 220px; height: 180px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
+.image-preview-frame { display: flex; flex: 1; min-width: 0; min-height: 0; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
 
 .image-preview-frame img, .image-preview-frame canvas { width: 100%; height: 100%; object-fit: contain; }
 
-.spine-preview { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px; }
+.spine-preview { display: grid; gap: 6px; padding: 10px 12px; color: var(--text-muted); font-size: 11px; }
 
 .spine-preview select { margin-left: 6px; max-width: 160px; }
 
@@ -669,7 +728,7 @@ body { margin: 0; }
 
 .asset-panel .spine-preview-loop input { display: block; margin: 0; accent-color: var(--accent); }
 
-.spine-preview-canvas { display: flex; width: 220px; height: 180px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
+.spine-preview-canvas { display: flex; width: 220px; height: 150px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); background: #222; }
 
 .spine-preview-progress-row { display: flex; width: 220px; align-items: center; gap: 8px; }
 

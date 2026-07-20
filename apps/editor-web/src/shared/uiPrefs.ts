@@ -28,10 +28,12 @@ export type UiPrefsState = PersistedUiPrefs & {
   setPresetsWindowSize(size: FloatingWindowSizePref): void;
 };
 
+export const ASSETS_WINDOW_MIN_SIZE: FloatingWindowSizePref = { width: 300, height: 450 };
+
 const defaults: PersistedUiPrefs = {
   assetsWindowOpen: false,
   assetsWindowPosition: { x: 16, y: 16 },
-  assetsWindowSize: { width: 280, height: 360 },
+  assetsWindowSize: { width: 360, height: 550 },
   assetsViewMode: "list",
   presetsWindowOpen: false,
   presetsWindowPosition: { x: 16, y: 392 },
@@ -52,6 +54,11 @@ function isSize(value: unknown): value is FloatingWindowSizePref {
     && typeof size.height === "number" && Number.isFinite(size.height) && size.height > 0;
 }
 
+/** Sizes persisted before a window's minimum grew must not squeeze its fixed zones out of view. */
+function clampSizeToMin(size: FloatingWindowSizePref, min: FloatingWindowSizePref): FloatingWindowSizePref {
+  return { width: Math.max(size.width, min.width), height: Math.max(size.height, min.height) };
+}
+
 export function loadUiPrefs(): PersistedUiPrefs {
   if (typeof localStorage === "undefined") return structuredClone(defaults);
 
@@ -66,7 +73,7 @@ export function loadUiPrefs(): PersistedUiPrefs {
     return {
       assetsWindowOpen: prefs.assetsWindowOpen,
       assetsWindowPosition: { ...prefs.assetsWindowPosition },
-      assetsWindowSize: isSize(prefs.assetsWindowSize) ? { ...prefs.assetsWindowSize } : { ...defaults.assetsWindowSize },
+      assetsWindowSize: isSize(prefs.assetsWindowSize) ? clampSizeToMin(prefs.assetsWindowSize, ASSETS_WINDOW_MIN_SIZE) : { ...defaults.assetsWindowSize },
       assetsViewMode: prefs.assetsViewMode === "grid" || prefs.assetsViewMode === "compact" ? prefs.assetsViewMode : "list",
       presetsWindowOpen: typeof prefs.presetsWindowOpen === "boolean" ? prefs.presetsWindowOpen : defaults.presetsWindowOpen,
       presetsWindowPosition: isPosition(prefs.presetsWindowPosition) ? { ...prefs.presetsWindowPosition } : { ...defaults.presetsWindowPosition },
