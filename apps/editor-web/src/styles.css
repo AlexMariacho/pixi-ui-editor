@@ -536,6 +536,12 @@ body { margin: 0; }
 
 .asset-preview-fallback { background: #626262; }
 
+.asset-preview-sound::after { content: "♪"; font-size: 18px; color: var(--text-bright); }
+
+.sound-preview { padding: 8px 12px; border-top: 1px solid var(--border); }
+
+.sound-preview audio { width: 100%; }
+
 .atlas-expand-toggle {
   flex: 0 0 auto;
   align-self: center;

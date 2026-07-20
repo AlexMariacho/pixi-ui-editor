@@ -1,7 +1,7 @@
 import { createStableId } from "@pixi-ui-editor/schema";
 import { commitCandidate, getEditingTarget } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
-type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "addAtlasAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
+type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "addAtlasAsset" | "addSoundAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
 export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
   addImageAsset: (name, source) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -25,6 +25,12 @@ export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
     for (const frameName of frameNames) frames[frameName] = createStableId();
     candidate.assets.push({ id: createStableId(), name, type: "atlas", files: structuredClone(files), frames });
     return commitCandidate(state, candidate, "Atlas asset creation was rejected because it makes the project document invalid.");
+  }),
+  addSoundAsset: (name, source) => set((state) => {
+    const candidate = structuredClone(state.document);
+    candidate.assets.push({ id: createStableId(), name, type: "sound", source: { ...source } });
+
+    return commitCandidate(state, candidate, "Sound asset creation was rejected because it makes the project document invalid.");
   }),
   setImageNodeAsset: (nodeId, assetId) => set((state) => {
     const candidate = structuredClone(state.document);
@@ -52,8 +58,8 @@ export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
       return state;
     }
 
-    if (asset.type !== "image" && asset.type !== "font") {
-      console.warn(`Cannot replace source for asset '${assetId}': it is not an image or font asset.`);
+    if (asset.type !== "image" && asset.type !== "font" && asset.type !== "sound") {
+      console.warn(`Cannot replace source for asset '${assetId}': it is not an image, font, or sound asset.`);
       return state;
     }
     asset.source = { ...source, version: new Date().toISOString() };

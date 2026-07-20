@@ -29,7 +29,7 @@ const atlasJsonCache = new Map<string, SpritesheetData>();
 
 export const resolveAssetUrl: AssetUrlResolver = (asset: Asset): string | undefined => {
   if (asset.type === "atlas") return resolveFileUrl(asset.files.texture.uri);
-  if (asset.type !== "image") return undefined;
+  if (asset.type !== "image" && asset.type !== "sound") return undefined;
   if (asset.source.uri.startsWith("data:")) return asset.source.uri;
   return SAMPLE_ASSET_URLS[asset.source.uri];
 };

@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
-export const CURRENT_SCHEMA_VERSION = 4 as const;
+export const CURRENT_SCHEMA_VERSION = 5 as const;
 const Id = Type.String({ format: "uuid" });
 const Name = Type.String({ minLength: 1 });
 export const LayoutProfileIdSchema = Type.Union([Type.Literal("desktop"), Type.Literal("mobile")]);
@@ -124,7 +124,8 @@ const SpineAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("spine")
 const FontAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("font"), family: Name, weight: Type.Union([Type.Literal("normal"), Type.Literal("bold")]), style: Type.Union([Type.Literal("normal"), Type.Literal("italic")]), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
 // Имя фрейма из spritesheet JSON → стабильный id фрейма; nodes ссылаются на этот id как на обычный image assetId.
 const AtlasAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("atlas"), files: Type.Object({ json: AssetFileSchema, texture: AssetFileSchema }), frames: Type.Record(Type.String({ minLength: 1 }), Id) });
-export const AssetSchema = Type.Union([ImageAsset, SpineAsset, FontAsset, AtlasAsset]);
+const SoundAsset = Type.Object({ id: Id, name: Name, type: Type.Literal("sound"), source: Type.Object({ uri: Type.String({ minLength: 1 }), mediaType: Type.String({ minLength: 1 }), version: Type.Optional(Type.String({ minLength: 1 })) }) });
+export const AssetSchema = Type.Union([ImageAsset, SpineAsset, FontAsset, AtlasAsset, SoundAsset]);
 export type Asset = Static<typeof AssetSchema>;
 export const PrefabDefinitionSchema = Type.Object({ id: Id, name: Name, rootNodeIds: Type.Array(Id), nodes: Type.Array(UINodeSchema), exposedProperties: Type.Array(Type.Object({ name: Name, type: Type.Union([Type.Literal("string"), Type.Literal("number"), Type.Literal("boolean"), Type.Literal("asset"), Type.Literal("visibility")]) })) });
 export type PrefabDefinition = Static<typeof PrefabDefinitionSchema>;
@@ -242,7 +243,7 @@ function migrateV1ToV2(document: Record<string, unknown>): void {
     }
   }
 }
-export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds only optional fields and new discriminated asset/node branches, so existing v2 entities require no rewrite. v3→v4 adds only the new discriminated "atlas" asset branch, so existing v3 entities require no rewrite either. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
+export function migrateProjectDocument(input: unknown): ProjectDocument { if (typeof input !== "object" || input === null || !Object.hasOwn(input, "schemaVersion")) throw new ProjectDocumentMigrationError("A schemaVersion is required for migration."); const version = (input as { schemaVersion?: unknown }).schemaVersion; if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > CURRENT_SCHEMA_VERSION) throw new ProjectDocumentMigrationError(`Unsupported schemaVersion '${String(version)}'.`); const migrated = structuredClone(input) as Record<string, unknown>; if (version <= 1) migrateV1ToV2(migrated); /* v2→v3 adds only optional fields and new discriminated asset/node branches, so existing v2 entities require no rewrite. v3→v4 adds only the new discriminated "atlas" asset branch, and v4→v5 only the "sound" asset branch, so existing entities require no rewrite either. */ migrated.schemaVersion = CURRENT_SCHEMA_VERSION; assertProjectDocument(migrated); return migrated; }
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson((value as Record<string, unknown>)[key])]));

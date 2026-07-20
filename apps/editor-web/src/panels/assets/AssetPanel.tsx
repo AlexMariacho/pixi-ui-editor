@@ -9,12 +9,16 @@ import { FloatingWindow } from "../../shared/FloatingWindow.js";
 
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const MAX_ATLAS_TEXTURE_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_SOUND_SIZE_BYTES = 10 * 1024 * 1024;
+const SOUND_EXTENSIONS: Record<string, string> = { ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".aac": "audio/aac", ".m4a": "audio/mp4" };
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const ACCEPTED_FONT_TYPES = new Set(["font/woff2", "font/woff", "font/ttf", "font/otf", "application/font-woff", "application/x-font-ttf", "application/x-font-opentype"]);
 const fontExtension = /\.(woff2?|ttf|otf)$/i;
 const fontMediaType = (file: File) => file.type || (file.name.toLowerCase().endsWith(".woff2") ? "font/woff2" : file.name.toLowerCase().endsWith(".woff") ? "font/woff" : file.name.toLowerCase().endsWith(".ttf") ? "font/ttf" : "font/otf");
 const imageExtension = /\.(png|jpe?g|webp)$/i;
 const extension = (name: string) => name.slice(name.lastIndexOf(".")).toLowerCase();
+const isSound = (file: File) => file.type.startsWith("audio/") || extension(file.name) in SOUND_EXTENSIONS;
+const soundMediaType = (file: File) => file.type || SOUND_EXTENSIONS[extension(file.name)] || "application/octet-stream";
 const assetNameFromFile = (name: string) => name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
 const readFile = (file: File): Promise<AssetFile> => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -25,8 +29,14 @@ const readFile = (file: File): Promise<AssetFile> => new Promise((resolve, rejec
 
 function AssetPreview({ asset }: { asset: Asset }) {
   const [failed, setFailed] = useState(false);
+  if (asset.type === "sound") return <div className="asset-preview asset-preview-fallback asset-preview-sound" />;
   const url = resolveAssetUrl(asset);
   return <div className={`asset-preview${failed || url === undefined ? " asset-preview-fallback" : ""}`}>{url !== undefined && !failed && <img src={url} alt="" onError={() => setFailed(true)} />}</div>;
+}
+
+function SoundPreview({ asset }: { asset: Extract<Asset, { type: "sound" }> }) {
+  const url = resolveAssetUrl(asset);
+  return <section className="sound-preview">{url !== undefined && <audio controls src={url} key={asset.id + (asset.source.version ?? "")} aria-label={`Playback of ${asset.name}`} />}</section>;
 }
 
 function ImagePreview({ asset }: { asset: Extract<Asset, { type: "image" }> }) {
@@ -164,7 +174,7 @@ async function findAtlasJsonFile(jsonFiles: File[]): Promise<{ file: File; frame
 
 export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid" }) {
   const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs);
-  const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const addAtlasAsset = useEditorStore((state) => state.addAtlasAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
+  const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const addAtlasAsset = useEditorStore((state) => state.addAtlasAsset); const addSoundAsset = useEditorStore((state) => state.addSoundAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null); const dragDepthRef = useRef(0); const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null); const [isDragActive, setIsDragActive] = useState(false); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedAtlasIds, setExpandedAtlasIds] = useState<Set<string>>(() => new Set());
   const toggleAtlasExpanded = (atlasId: string) => setExpandedAtlasIds((current) => { const next = new Set(current); if (next.has(atlasId)) next.delete(atlasId); else next.add(atlasId); return next; });
@@ -195,6 +205,14 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
 
     if (assetIdToReplace !== null && files.length !== 1) { window.alert("Image replacement requires exactly one image file."); return; }
     for (const file of files) {
+      if (isSound(file)) {
+        if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "sound") { window.alert("A sound can only replace a sound asset."); continue; }
+        const mediaType = soundMediaType(file);
+        if (mediaType === "application/octet-stream") { window.alert(`'${file.name}' is not a supported audio format.`); continue; }
+        if (file.size > MAX_SOUND_SIZE_BYTES) { window.alert(`'${file.name}' exceeds the 10 MB sound limit.`); continue; }
+        try { const source = await readFile(file); if (assetIdToReplace === null) addSoundAsset(assetNameFromFile(file.name), { uri: source.uri, mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
+        continue;
+      }
       const isFont = ACCEPTED_FONT_TYPES.has(file.type) || fontExtension.test(file.name);
       if (isFont) {
         if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "font") { window.alert("A font can only replace a font asset."); continue; }
@@ -202,6 +220,7 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
         continue;
       }
       if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES) { window.alert(`'${file.name}' is not a supported image up to 2 MB.`); continue; }
+      if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "image") { window.alert("An image can only replace an image asset."); continue; }
       try { const source = await readFile(file); if (assetIdToReplace === null) addImageAsset(assetNameFromFile(file.name), { uri: source.uri, mediaType: source.mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType: source.mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
     }
     setReplaceAssetId(null);
@@ -235,7 +254,7 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
 
   const rowClassName = viewMode === "grid" ? "asset-grid-tile" : viewMode === "compact" ? "asset-compact-row" : "asset-row";
   return <section className={`asset-panel${isDragActive ? " asset-panel-drop-active" : ""}`} aria-label="Assets" onDragEnter={(event) => { if (hasFiles(event)) { dragDepthRef.current += 1; setIsDragActive(true); } }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (hasFiles(event) && --dragDepthRef.current <= 0) { dragDepthRef.current = 0; setIsDragActive(false); } }} onDrop={drop}>
-    <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp,.woff2,.woff,.ttf,.otf" onChange={upload} /><p className="asset-panel-drop-hint">Drop images, fonts, a spritesheet JSON + texture, or a Spine bundle here</p>
+    <input ref={inputRef} type="file" multiple accept=".json,.atlas,image/png,image/jpeg,image/webp,.woff2,.woff,.ttf,.otf,.wav,.mp3,.ogg,.aac,.m4a,audio/*" onChange={upload} /><p className="asset-panel-drop-hint">Drop images, fonts, sounds, a spritesheet JSON + texture, or a Spine bundle here</p>
     <ul className={`asset-list asset-list-${viewMode}`}>{rows.map((row) => {
       if (row.kind === "frame") {
         const usage = usageOf(row.frameId);
@@ -261,6 +280,7 @@ export function AssetPanel({ viewMode }: { viewMode: "list" | "compact" | "grid"
       </li>;
     })}</ul>
     {selectedAsset?.type === "image" && <ImagePreview asset={selectedAsset} />}
+    {selectedAsset?.type === "sound" && <SoundPreview asset={selectedAsset} />}
     {selectedAsset?.type === "spine" && <SpinePreview key={selectedAsset.id} asset={selectedAsset} />}
     {selectedAsset?.type === "atlas" && <ImagePreview asset={{ id: selectedAsset.id, name: selectedAsset.name, type: "image", source: { uri: selectedAsset.files.texture.uri, mediaType: selectedAsset.files.texture.mediaType } }} />}
     {selectedFrame !== undefined && <FramePreview key={selectedFrame.frameId} atlas={selectedFrame.atlas} frameName={selectedFrame.frameName} />}

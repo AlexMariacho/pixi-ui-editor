@@ -107,9 +107,33 @@ describe("schema v1", () => {
     (document as { schemaVersion: number }).schemaVersion = 3;
 
     const migrated = migrateProjectDocument(document);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.assets).toEqual(v3Assets);
     expect(migrated.scenes[0]!.nodes).toEqual(v3Nodes);
+  });
+
+  it("migrates a v4 document to v5 without changing its existing assets or nodes", () => {
+    const document = createProjectDocumentFixture();
+    const v4Assets = structuredClone(document.assets);
+    const v4Nodes = structuredClone(document.scenes[0]!.nodes);
+    (document as { schemaVersion: number }).schemaVersion = 4;
+
+    const migrated = migrateProjectDocument(document);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.assets).toEqual(v4Assets);
+    expect(migrated.scenes[0]!.nodes).toEqual(v4Nodes);
+  });
+
+  it("rejects a sound asset with an empty source uri", () => {
+    const result = validateFixtureMutation((document) => {
+      document.assets.push({
+        id: stableId(45),
+        name: "Click",
+        type: "sound",
+        source: { uri: "", mediaType: "audio/wav" },
+      });
+    });
+    expect(result.issues.some((issue) => issue.code === "STRUCTURAL_SCHEMA")).toBe(true);
   });
 
   it("accepts an image node whose assetId is an atlas frame id", () => {

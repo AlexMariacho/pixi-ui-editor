@@ -846,7 +846,10 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       event.preventDefault();
       const assetId = event.dataTransfer.getData("application/x-pixi-ui-editor-asset");
       const position = toWorldPosition(event);
-      if (resolveAssetReference(document, assetId) !== undefined && position !== undefined) {
+      const reference = resolveAssetReference(document, assetId);
+      // Sounds have no scene representation until TASK-037: dropping one must not create an image node with a broken reference.
+      if (reference?.kind === "asset" && reference.asset.type === "sound") return;
+      if (reference !== undefined && position !== undefined) {
         void loadEditorAssetOrFrameSize(document, assetId)
           .catch((error) => console.warn(`Unable to load native size for asset '${assetId}'.`, error))
           .finally(() => addNodeFromAsset(assetId, position));

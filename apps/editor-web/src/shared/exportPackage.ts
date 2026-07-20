@@ -19,6 +19,14 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   "image/avif": ".avif",
 };
 
+const SOUND_EXTENSIONS: Record<string, string> = {
+  "audio/wav": ".wav",
+  "audio/mpeg": ".mp3",
+  "audio/ogg": ".ogg",
+  "audio/aac": ".aac",
+  "audio/mp4": ".m4a",
+};
+
 /** Image assets have no file name, so the exported name is the asset name plus a mediaType extension. */
 function imageFileName(asset: Extract<Asset, { type: "image" }>): string {
   const extension = IMAGE_EXTENSIONS[asset.source.mediaType] ?? `.${sanitizeName(asset.source.mediaType.split("/")[1] ?? "bin")}`;
@@ -44,10 +52,13 @@ export function buildExportEntries(projectDocument: ProjectDocument, resolveFile
     } else if (asset.type === "font") {
       const extension = asset.source.mediaType.split("/")[1] ?? "font";
       asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}.${sanitizeName(extension)}`, asset.source.uri);
+    } else if (asset.type === "sound") {
+      const extension = SOUND_EXTENSIONS[asset.source.mediaType] ?? `.${sanitizeName(asset.source.mediaType.split("/")[1] ?? "bin")}`;
+      asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}${extension}`, asset.source.uri);
     } else if (asset.type === "atlas") {
       asset.files.json.uri = addFile(asset.id, asset.files.json.name, asset.files.json.uri);
       asset.files.texture.uri = addFile(asset.id, asset.files.texture.name, asset.files.texture.uri);
-    } else {
+    } else if (asset.type === "spine") {
       asset.files.skeleton.uri = addFile(asset.id, asset.files.skeleton.name, asset.files.skeleton.uri);
       asset.files.atlas.uri = addFile(asset.id, asset.files.atlas.name, asset.files.atlas.uri);
       for (const texture of asset.files.textures) {
