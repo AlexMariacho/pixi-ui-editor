@@ -95,6 +95,8 @@ export function ScreenResolutionsMenu({
   const selectedPreset = preferredGroupLabels
     .flatMap((groupLabel) => SCREEN_PRESET_GROUPS.find((group) => group.label === groupLabel)?.presets ?? [])
     .find((preset) => isCurrentPreset(preset, viewport, activeProfile));
+  const [activeGroupLabel, setActiveGroupLabel] = useState(() => preferredGroupLabels[0]);
+  const activeGroup = SCREEN_PRESET_GROUPS.find((group) => group.label === activeGroupLabel) ?? SCREEN_PRESET_GROUPS[0];
 
   useEffect(() => {
     const closeMenu = (event: MouseEvent) => {
@@ -133,22 +135,33 @@ export function ScreenResolutionsMenu({
       </button>
       {isOpen && (
         <section className="screen-resolutions-popover" aria-label="Screen Resolutions">
-          {SCREEN_PRESET_GROUPS.map((group) => (
-            <fieldset key={group.label} className="screen-resolution-group">
-              <legend>{group.label}</legend>
-              {group.presets.map((preset) => (
-                <label key={preset.label} className="screen-resolution-option">
-                  <input
-                    type="radio"
-                    name="screen-resolution"
-                    checked={selectedPreset?.label === preset.label}
-                    onChange={() => applyPreset(preset)}
-                  />
-                  <span>{getPresetLabel(preset, activeProfile)}</span>
-                </label>
-              ))}
-            </fieldset>
-          ))}
+          <div className="screen-resolution-tabs" role="tablist">
+            {SCREEN_PRESET_GROUPS.map((group) => (
+              <button
+                key={group.label}
+                type="button"
+                role="tab"
+                aria-selected={activeGroupLabel === group.label}
+                className={`screen-resolution-tab${activeGroupLabel === group.label ? " screen-resolution-tab-active" : ""}`}
+                onClick={() => setActiveGroupLabel(group.label)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <fieldset className="screen-resolution-group" aria-label={activeGroup.label}>
+            {activeGroup.presets.map((preset) => (
+              <label key={preset.label} className="screen-resolution-option">
+                <input
+                  type="radio"
+                  name="screen-resolution"
+                  checked={selectedPreset?.label === preset.label}
+                  onChange={() => applyPreset(preset)}
+                />
+                <span>{getPresetLabel(preset, activeProfile)}</span>
+              </label>
+            ))}
+          </fieldset>
           <fieldset className="screen-resolution-group screen-resolution-custom">
             <legend>Custom</legend>
             <div className="screen-resolution-custom-fields">

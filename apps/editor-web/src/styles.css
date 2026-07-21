@@ -109,6 +109,22 @@ body { margin: 0; }
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
 }
 
+.screen-resolution-tabs { display: flex; gap: 4px; }
+
+.screen-resolution-tab {
+  padding: 5px 12px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.screen-resolution-tab:hover { color: var(--text-bright); background: var(--bg-button-hover); }
+.screen-resolution-tab-active, .screen-resolution-tab-active:hover { color: var(--text-bright); background: var(--bg-button); border-color: var(--border-strong); }
+
 .screen-resolution-group {
   display: grid;
   gap: 5px;
@@ -117,6 +133,7 @@ body { margin: 0; }
   border: 0;
 }
 
+.screen-resolution-tabs + .screen-resolution-group { padding-top: 10px; border-top: 1px solid var(--border); }
 .screen-resolution-group + .screen-resolution-group { padding-top: 10px; border-top: 1px solid var(--border); }
 
 .screen-resolution-group legend { padding: 0; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
