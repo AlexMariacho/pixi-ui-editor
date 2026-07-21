@@ -876,6 +876,8 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     if (document.prefabs.some((candidate) => candidate.id === prefabId) && position !== undefined) addPrefabInstance(prefabId, position);
   };
 
+  const activeSceneViewport = document.scenes.find((candidate) => candidate.id === sceneId)?.layout.referenceViewports[activeProfile];
+
   return (
     <div ref={hostRef} className={`scene-canvas${activeTool === "pan" ? " scene-canvas-pan" : ""}`} onDragOver={(event) => { if (isAssetDrag(event) || isPrefabDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={drop}>
       <ToolPanel activeTool={activeTool} viewMode={viewMode} />
@@ -910,6 +912,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       </div>}
       <div className="canvas-hud">
         <button type="button" onClick={() => fitCameraRef.current?.()}>Fit</button>
+        {activeSceneViewport !== undefined && <span>{activeSceneViewport.width}×{activeSceneViewport.height}</span>}
         <span>{Math.round(zoom * 100)}%</span>
       </div>
     </div>
