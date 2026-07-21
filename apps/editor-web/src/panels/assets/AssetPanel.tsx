@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import type { Asset, AssetFile } from "@pixi-ui-editor/schema";
 import { Application } from "pixi.js";
-import { collectNodeAssetIds, createSpineView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { clearEditorSpineCache, getCachedAtlasJson, loadEditorAtlasJson, loadEditorSpineAsset, resolveAssetUrl } from "../../shared/assets.js";
+import { createSpineView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { clearEditorSpineCache, collectRenderedAssetIds, getCachedAtlasJson, loadEditorAtlasJson, loadEditorSpineAsset, resolveAssetUrl } from "../../shared/assets.js";
 import { useEditorStore, type AtlasAsset } from "../../store/index.js";
 import { ASSETS_WINDOW_MIN_SIZE, useUiPrefsStore } from "../../shared/uiPrefs.js";
 import { FloatingWindow } from "../../shared/FloatingWindow.js";
@@ -198,7 +198,7 @@ async function findAtlasJsonFile(jsonFiles: File[]): Promise<{ file: File; frame
 
 export function AssetPanel() {
   const viewMode = useUiPrefsStore((state) => state.assetsViewMode); const setViewMode = useUiPrefsStore((state) => state.setAssetsViewMode);
-  const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs);
+  const assets = useEditorStore((state) => state.document.assets); const scenes = useEditorStore((state) => state.document.scenes); const prefabs = useEditorStore((state) => state.document.prefabs); const effects = useEditorStore((state) => state.document.effects);
   const addImageAsset = useEditorStore((state) => state.addImageAsset); const addFontAsset = useEditorStore((state) => state.addFontAsset); const addSpineAsset = useEditorStore((state) => state.addSpineAsset); const addAtlasAsset = useEditorStore((state) => state.addAtlasAsset); const addSoundAsset = useEditorStore((state) => state.addSoundAsset); const replaceAssetSource = useEditorStore((state) => state.replaceAssetSource); const replaceSpineAssetFiles = useEditorStore((state) => state.replaceSpineAssetFiles); const deleteAsset = useEditorStore((state) => state.deleteAsset);
   const inputRef = useRef<HTMLInputElement>(null); const dragDepthRef = useRef(0); const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null); const [isDragActive, setIsDragActive] = useState(false); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedAtlasIds, setExpandedAtlasIds] = useState<Set<string>>(() => new Set());
@@ -269,10 +269,10 @@ export function AssetPanel() {
   // Sum of usage counts per assetId/frameId, computed once: an atlas's own usage is the sum over its frames.
   const usageCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const owner of [...scenes, ...prefabs]) for (const node of owner.nodes) for (const id of collectNodeAssetIds(node)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const owner of [...scenes, ...prefabs]) for (const node of owner.nodes) for (const id of collectRenderedAssetIds(effects, node)) counts.set(id, (counts.get(id) ?? 0) + 1);
     for (const scene of scenes) if (scene.audio?.backgroundMusicAssetId !== undefined) counts.set(scene.audio.backgroundMusicAssetId, (counts.get(scene.audio.backgroundMusicAssetId) ?? 0) + 1);
     return counts;
-  }, [scenes, prefabs]);
+  }, [scenes, prefabs, effects]);
   const usageOf = (id: string) => usageCounts.get(id) ?? 0;
   const atlasUsage = (atlas: AtlasAsset) => Object.values(atlas.frames).reduce((total, frameId) => total + usageOf(frameId), 0);
 

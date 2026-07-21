@@ -25,8 +25,8 @@ export type EditorState = {
   /** Transient control values shown only on the inert authoring canvas. */
   sliderPreviewValues: Record<string, number>;
   progressBarPreviewValues: Record<string, number>;
-  particlePlayback: Record<string, "play" | "pause" | "restart" | "step">;
-  particleDiagnostics: Record<string, { active: number; free: number; dropped: number; playing: boolean }>;
+  particlePlayback: Record<string, "play" | "pause" | "restart" | "step" | "stop">;
+  particleDiagnostics: Record<string, { active: number; free: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean }>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -77,8 +77,8 @@ export type EditorState = {
   duplicateParticleEffect(nodeId: string): void;
   renameParticleEffect(effectId: string, name: string): void;
   deleteParticleEffect(effectId: string): void;
-  controlParticlePlayback(nodeId: string, action: "play" | "pause" | "restart" | "step"): void;
-  reportParticleDiagnostics(nodeId: string, diagnostics: { active: number; free: number; dropped: number; playing: boolean }): void;
+  controlParticlePlayback(nodeId: string, action: "play" | "pause" | "restart" | "step" | "stop"): void;
+  reportParticleDiagnostics(nodeId: string, diagnostics: { active: number; free: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean }): void;
   addNode(type: AddableNodeType): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
   moveNode(nodeId: string, placement: { parentId: string | null; index: number }): void;

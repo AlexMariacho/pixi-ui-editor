@@ -140,7 +140,7 @@ describe("ParticleSimulator lifecycle", () => {
     sim.step(area);
     expect(sim.activeSlots.size).toBe(4);
     sim.stop();
-    expect(sim.getDiagnostics().playing).toBe(false);
+    expect(sim.getDiagnostics()).toMatchObject({ playing: false, stopped: true });
     sim.step(area); // still simulating: ages toward death but hasn't reached lifetime yet
     expect(sim.activeSlots.size).toBe(4);
     sim.step(area); // lifetime reached; particles die and are not replaced because spawning is blocked
@@ -177,7 +177,7 @@ describe("ParticleSimulator lifecycle", () => {
 
     sim.pause();
     sim.update(1, area); // paused: no time passes, no state changes
-    expect(sim.getDiagnostics()).toMatchObject({ active: 2, dropped: 1, playing: false });
+    expect(sim.getDiagnostics()).toMatchObject({ active: 2, dropped: 1, playing: false, stopped: false }); // paused is distinct from stopped
     sim.step(area); // step still advances one fixed tick even while paused
     expect(sim.getDiagnostics().playing).toBe(false); // ...without leaving pause
 

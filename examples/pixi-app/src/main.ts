@@ -122,6 +122,7 @@ async function main(): Promise<void> {
   let profile = resolveProfileForViewport(packageDocument.settings, window.innerWidth, window.innerHeight);
   let sceneRoot: Container | null = null;
   let particleTicker: ((ticker: { deltaMS: number }) => void) | undefined;
+  let celebrationView: ParticleEmitterNodeView | undefined;
   let buildToken = 0;
   const textureCache = new Map<string, Texture>();
   const spineCache = new Map<string, SkeletonData>();
@@ -180,6 +181,7 @@ async function main(): Promise<void> {
     });
 
     reset.onPress.connect(() => celebration.restart());
+    celebrationView = celebration;
 
     if (sceneRoot !== null && particleTicker !== undefined) app.ticker.remove(particleTicker);
     sceneRoot?.destroy({ children: true });
@@ -199,6 +201,14 @@ async function main(): Promise<void> {
     } else {
       layoutSceneRoot();
     }
+  });
+
+  // Generic demo command: stop() lets already-emitted celebration particles drain instead of an
+  // instant clear, distinguishing it visually from restart()'s immediate reset.
+  window.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() !== "s" || celebrationView === undefined) return;
+    celebrationView.stop();
+    status.show(`${runtimeState.name || "Anonymous"} · energy ${runtimeState.energy} · celebration stopping (press Reset to restart)`);
   });
 
   await rebuildScene();

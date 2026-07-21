@@ -1,5 +1,5 @@
-import { loadSceneFonts, loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import type { Asset, ProjectDocument } from "@pixi-ui-editor/schema";
+import { collectNodeAssetIds, loadSceneFonts, loadSceneSpines, loadSceneTextures, loadSpineAsset, loadTexture, type AssetUrlResolver, type FileUrlResolver, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { collectEffectAssetIds, type Asset, type EffectDefinition, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import type { Spritesheet, SpritesheetData, Texture } from "pixi.js";
 import { resolveAssetReference, type AtlasAsset } from "../store/helpers.js";
 import buttonDisabledUrl from "../../../../examples/sample-project/assets/button-disabled.svg";
@@ -48,6 +48,14 @@ export function listImageAssetOptions(assets: Asset[]): { id: string; label: str
     else if (asset.type === "atlas") for (const frameName of Object.keys(asset.frames)) options.push({ id: asset.frames[frameName]!, label: `${asset.name} / ${frameName}` });
   }
   return options;
+}
+
+/** A node's own asset ids plus, for a particle emitter, its effect's indirect image/atlas-frame sources. */
+export function collectRenderedAssetIds(effects: readonly EffectDefinition[], node: UINode): string[] {
+  const direct = collectNodeAssetIds(node);
+  if (node.type !== "particle-emitter") return direct;
+  const effect = effects.find((item) => item.id === node.effectId);
+  return effect === undefined ? direct : [...direct, ...collectEffectAssetIds(effect)];
 }
 
 export function listSoundAssetOptions(assets: Asset[]): { id: string; label: string }[] {

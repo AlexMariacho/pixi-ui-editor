@@ -9,6 +9,7 @@ type InspectorWindowProps = {
 type InspectorFieldProps = {
   label: string;
   children: ReactNode;
+  error?: string;
 };
 
 /** Shared inspector window frame for all property groups. */
@@ -17,8 +18,8 @@ export function InspectorWindow({ title, children }: InspectorWindowProps) {
 }
 
 /** Shared label/control geometry for every editable and read-only inspector row. */
-export function InspectorField({ label, children }: InspectorFieldProps) {
-  return <label className="inspector-field"><span>{label}</span>{children}</label>;
+export function InspectorField({ label, children, error }: InspectorFieldProps) {
+  return <label className="inspector-field"><span>{label}</span>{children}{error !== undefined && <small className="inspector-field-error" role="alert">{error}</small>}</label>;
 }
 
 /** Keeps a free-typed text buffer for a number input. */
@@ -33,7 +34,7 @@ export function useNumberText(value: number, format: (value: number) => string =
   return [text, setText] as const;
 }
 
-export function NumberField({ label = "", value, step = 1, onChange }: { label?: string; value: number; step?: number; onChange: (value: number) => void }) {
+export function NumberField({ label = "", value, step = 1, error, onChange }: { label?: string; value: number; step?: number; error?: string; onChange: (value: number) => void }) {
   const [text, setText] = useNumberText(value);
 
   const applyValue = (event: ChangeEvent<HTMLInputElement>) => {
@@ -44,7 +45,7 @@ export function NumberField({ label = "", value, step = 1, onChange }: { label?:
     onChange(parsed);
   };
 
-  return <InspectorField label={label}><input type="number" value={text} step={step} onChange={applyValue} /></InspectorField>;
+  return <InspectorField label={label} error={error}><input type="number" value={text} step={step} onChange={applyValue} /></InspectorField>;
 }
 
 export function NodeNameField({ nodeId, value, onCommit }: { nodeId: string; value: string; onCommit: (nodeId: string, value: string) => void }) {

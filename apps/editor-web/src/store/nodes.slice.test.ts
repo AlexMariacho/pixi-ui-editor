@@ -77,6 +77,64 @@ describe("particle definitions", () => {
     useEditorStore.getState().deleteParticleEffect(emitter.effectId);
     expect(useEditorStore.getState().document.effects.some((effect) => effect.id === emitter.effectId)).toBe(false);
   });
+
+  it("deletes a definition that has become unused after being created without ever assigning it to a node", () => {
+    const effectId = useEditorStore.getState().createParticleEffect("Orphan");
+    expect(effectId).not.toBeNull();
+    useEditorStore.getState().deleteParticleEffect(effectId!);
+    expect(useEditorStore.getState().document.effects.some((effect) => effect.id === effectId)).toBe(false);
+  });
+
+  it("edits representative nested fields and adds/reorders image and atlas frame sources, keeping the document valid", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("particle-emitter");
+    const emitter = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
+    if (emitter.type !== "particle-emitter") throw new Error("Expected a particle emitter");
+    const effect = useEditorStore.getState().document.effects.find((item) => item.id === emitter.effectId)!;
+    if (effect.type !== "particles") throw new Error("Expected a particle effect");
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { emission: { ...effect.emission, rate: 42, bursts: [{ time: 0.1, count: 3 }] } });
+    expect(useEditorStore.getState().document.effects.find((item) => item.id === effect.id)).toMatchObject({ emission: { rate: 42, bursts: [{ time: 0.1, count: 3 }] } });
+
+    useEditorStore.getState().addAtlasAsset("Sparkle Sheet", {
+      json: { name: "sparkles.json", uri: "data:application/json;base64,AAAA", mediaType: "application/json" },
+      texture: { name: "sparkles.png", uri: "data:image/png;base64,BBBB", mediaType: "image/png" },
+    }, ["spark-a", "spark-b"]);
+    const atlas = useEditorStore.getState().document.assets.find((asset) => asset.type === "atlas")!;
+    if (atlas.type !== "atlas") throw new Error("Expected an atlas asset");
+    const frameId = atlas.frames["spark-a"]!;
+    const imageAssetId = initialDocument.assets.find((asset) => asset.type === "image")!.id;
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { particle: { ...effect.particle, visual: { ...effect.particle.visual, source: { type: "random", assetIds: [imageAssetId, frameId] } } } });
+    let updated = useEditorStore.getState().document.effects.find((item) => item.id === effect.id);
+    expect(updated).toMatchObject({ particle: { visual: { source: { type: "random", assetIds: [imageAssetId, frameId] } } } });
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { particle: { ...effect.particle, visual: { ...effect.particle.visual, source: { type: "random", assetIds: [frameId, imageAssetId] } } } });
+    updated = useEditorStore.getState().document.effects.find((item) => item.id === effect.id);
+    expect(updated).toMatchObject({ particle: { visual: { source: { type: "random", assetIds: [frameId, imageAssetId] } } } });
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+
+  it("rejects an inverted range, an out-of-duration burst, and an empty source list without any partial mutation", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("particle-emitter");
+    const emitter = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
+    if (emitter.type !== "particle-emitter") throw new Error("Expected a particle emitter");
+    const effect = useEditorStore.getState().document.effects.find((item) => item.id === emitter.effectId)!;
+    if (effect.type !== "particles") throw new Error("Expected a particle effect");
+    const before = structuredClone(useEditorStore.getState().document);
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { particle: { ...effect.particle, lifetime: { min: 5, max: 1 } } });
+    expect(useEditorStore.getState().document).toEqual(before);
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { emission: { ...effect.emission, bursts: [{ time: effect.emission.duration + 1, count: 1 }] } });
+    expect(useEditorStore.getState().document).toEqual(before);
+
+    useEditorStore.getState().updateParticleEffect(effect.id, { particle: { ...effect.particle, visual: { ...effect.particle.visual, source: { type: "random", assetIds: [] } } } });
+    expect(useEditorStore.getState().document).toEqual(before);
+  });
 });
 
 describe("deleteNode", () => {

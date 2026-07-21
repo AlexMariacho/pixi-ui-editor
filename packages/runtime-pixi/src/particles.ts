@@ -116,7 +116,7 @@ export class ParticlePool<T> {
 }
 
 export type ParticleSpawnContext = { width: number; height: number; space: "local" | "world" };
-export type ParticleDiagnostics = { active: number; dropped: number; playing: boolean; disposed: boolean };
+export type ParticleDiagnostics = { active: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean };
 
 /** Adapter-supplied, renderer-specific operations. The simulator never imports Pixi. */
 export type ParticleRenderHooks<TRender> = {
@@ -218,7 +218,7 @@ export class ParticleSimulator<TRender> {
   }
 
   getDiagnostics(): ParticleDiagnostics {
-    return { active: this.pool.values.size, dropped: this.pool.dropped, playing: this.emitting, disposed: this.disposed };
+    return { active: this.pool.values.size, dropped: this.pool.dropped, playing: this.emitting, stopped: this.simulating && !this.emitting && !this.disposed, disposed: this.disposed };
   }
 
   private tick(dt: number): void {

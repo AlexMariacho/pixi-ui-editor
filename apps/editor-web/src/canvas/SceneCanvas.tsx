@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, updateParticleEmitters, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { isPositionManagingContainer, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, resolveAssetReference, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
-import { loadEditorAssetOrFrameSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
+import { collectRenderedAssetIds, loadEditorAssetOrFrameSize, loadEditorSceneFonts, loadEditorSceneSpines, loadEditorSceneTextures } from "../shared/assets.js";
 import { PREFAB_DRAG_TYPE } from "../panels/presets/PresetsPanel.js";
 import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorCommands.js";
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
@@ -129,7 +129,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
   const structuralKey = useMemo(() => computeStructuralKey(document, sceneId, viewMode), [document, sceneId, viewMode]);
   const renderedAssetReferencesKey = useMemo(() => {
     const scene = document.scenes.find((candidate) => candidate.id === sceneId);
-    return scene === undefined ? "[]" : JSON.stringify(collectRenderedNodes(document, scene).map((node) => [node.id, collectNodeAssetIds(node)]));
+    return scene === undefined ? "[]" : JSON.stringify(collectRenderedNodes(document, scene).map((node) => [node.id, collectRenderedAssetIds(document.effects, node)]));
   }, [document, sceneId]);
 
   const redrawSelectionRef = useRef<() => void>(() => {
@@ -780,23 +780,31 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       const root = sceneRootRef.current;
       if (root === null) return;
       const state = useEditorStore.getState();
+      // Step advances exactly one fixed tick itself; the node it targets must not also receive the
+      // regular accumulator-driven update below in the same ticker turn, or it would double-advance.
+      const steppedIds = new Set<string>();
       for (const [id, action] of Object.entries(state.particlePlayback)) {
-        const view = nodeViewsRef.current.get(id) as (Container & { play?(): void; pause?(): void; restart?(): void; step?(): void }) | undefined;
+        const view = nodeViewsRef.current.get(id) as (Container & { play?(): void; pause?(): void; restart?(): void; step?(): void; stop?(): void }) | undefined;
         if (action === "play") view?.play?.();
         else if (action === "pause") view?.pause?.();
         else if (action === "restart") view?.restart?.();
-        else view?.step?.();
+        else if (action === "stop") view?.stop?.();
+        else { view?.step?.(); steppedIds.add(id); }
       }
       if (Object.keys(state.particlePlayback).length > 0) useEditorStore.setState({ particlePlayback: {} });
-      updateParticleEmitters(root, application.ticker.deltaMS / 1000);
+      const deltaSeconds = application.ticker.deltaMS / 1000;
+      for (const [id, view] of nodeViewsRef.current) {
+        if (steppedIds.has(id)) continue;
+        (view as Container & { updateParticles?(deltaSeconds: number): void }).updateParticles?.(deltaSeconds);
+      }
       if (performance.now() - lastReport < 150) return;
       lastReport = performance.now();
       const scene = documentRef.current.scenes.find((item) => item.id === sceneId);
       for (const [id, view] of nodeViewsRef.current) {
-        const diagnostics = (view as Container & { getDiagnostics?(): { active: number; dropped: number; playing: boolean; disposed: boolean } }).getDiagnostics?.();
+        const diagnostics = (view as Container & { getDiagnostics?(): { active: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean } }).getDiagnostics?.();
         const node = scene?.nodes.find((item) => item.id === id);
         const effect = node?.type === "particle-emitter" ? documentRef.current.effects.find((item) => item.id === node.effectId) : undefined;
-        if (diagnostics !== undefined && effect?.type === "particles") state.reportParticleDiagnostics(id, { active: diagnostics.active, dropped: diagnostics.dropped, playing: diagnostics.playing, free: Math.max(0, effect.maxParticles - diagnostics.active) });
+        if (diagnostics !== undefined && effect?.type === "particles") state.reportParticleDiagnostics(id, { active: diagnostics.active, dropped: diagnostics.dropped, playing: diagnostics.playing, stopped: diagnostics.stopped, disposed: diagnostics.disposed, free: Math.max(0, effect.maxParticles - diagnostics.active) });
       }
     };
     application.ticker.add(tick);
