@@ -75,7 +75,7 @@ const NODE_TYPE_FIXTURES: Record<UINode["type"], (base: NodeBaseFields) => UINod
   input: (base) => ({ ...base, type: "input", placeholder: "Enter text", defaultValue: "", secure: false, align: "left", padding: { left: 0, right: 0, top: 0, bottom: 0 }, cleanOnFocus: false, clipText: true, textStyle: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 } }),
   slider: (base) => ({ ...base, type: "slider", backgroundAssetId: ids.asset, fillAssetId: ids.asset, handleAssetId: ids.asset, min: 0, max: 100, step: 1, defaultValue: 50, fillPadding: { left: 0, right: 0, top: 0, bottom: 0 } }),
   "progress-bar": (base) => ({ ...base, type: "progress-bar", backgroundAssetId: ids.asset, fillAssetId: ids.asset, defaultProgress: 50, fillPadding: { left: 0, right: 0, top: 0, bottom: 0 } }),
-  "particle-emitter": (base) => ({ ...base, type: "particle-emitter", effectId: "40000000-0000-4000-8000-00000000000f", autoplay: true, simulationSpace: "local", stopBehavior: "clear" }),
+  "particle-emitter": (base) => ({ ...base, type: "particle-emitter", effectId: "40000000-0000-4000-8000-00000000000f", autoplay: true, simulationSpace: "local" }),
 };
 
 /** FancyButton keeps exactly one state view visible, so the shown texture identifies the active state. */

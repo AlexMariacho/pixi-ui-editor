@@ -781,11 +781,11 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       if (root === null) return;
       const state = useEditorStore.getState();
       for (const [id, action] of Object.entries(state.particlePlayback)) {
-        const view = nodeViewsRef.current.get(id) as (Container & { play?(): void; pause?(): void; restart?(): void; updateParticles?(delta: number): void }) | undefined;
+        const view = nodeViewsRef.current.get(id) as (Container & { play?(): void; pause?(): void; restart?(): void; step?(): void }) | undefined;
         if (action === "play") view?.play?.();
         else if (action === "pause") view?.pause?.();
         else if (action === "restart") view?.restart?.();
-        else view?.updateParticles?.(1 / 60);
+        else view?.step?.();
       }
       if (Object.keys(state.particlePlayback).length > 0) useEditorStore.setState({ particlePlayback: {} });
       updateParticleEmitters(root, application.ticker.deltaMS / 1000);
@@ -793,10 +793,10 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       lastReport = performance.now();
       const scene = documentRef.current.scenes.find((item) => item.id === sceneId);
       for (const [id, view] of nodeViewsRef.current) {
-        const diagnostics = (view as Container & { getDiagnostics?(): { active: number; dropped: number; playing: boolean } }).getDiagnostics?.();
+        const diagnostics = (view as Container & { getDiagnostics?(): { active: number; dropped: number; playing: boolean; disposed: boolean } }).getDiagnostics?.();
         const node = scene?.nodes.find((item) => item.id === id);
         const effect = node?.type === "particle-emitter" ? documentRef.current.effects.find((item) => item.id === node.effectId) : undefined;
-        if (diagnostics !== undefined && effect?.type === "particles") state.reportParticleDiagnostics(id, { ...diagnostics, free: Math.max(0, effect.maxParticles - diagnostics.active) });
+        if (diagnostics !== undefined && effect?.type === "particles") state.reportParticleDiagnostics(id, { active: diagnostics.active, dropped: diagnostics.dropped, playing: diagnostics.playing, free: Math.max(0, effect.maxParticles - diagnostics.active) });
       }
     };
     application.ticker.add(tick);

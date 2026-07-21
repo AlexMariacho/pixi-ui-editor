@@ -301,7 +301,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       if (existing === undefined && image === undefined) { console.warn("Cannot add a particle emitter: the project document does not contain an image asset."); return state; }
       const effect = existing ?? createDefaultParticleEffect(createStableId(), `Particles ${candidate.effects.filter((item) => item.type === "particles").length + 1}`);
       if (existing === undefined) { if (effect.particle.visual.source.type === "single") effect.particle.visual.source.assetId = image!.id; candidate.effects.push(effect); }
-      node = { ...base, type, effectId: effect.id, autoplay: true, simulationSpace: "local", stopBehavior: "clear" };
+      node = { ...base, type, effectId: effect.id, autoplay: true, simulationSpace: "local" };
     } else {
       node = { ...base, type };
     }

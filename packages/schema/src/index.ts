@@ -122,7 +122,7 @@ export const EffectDefinitionSchema = Type.Union([Type.Object({
 export type EffectDefinition = Static<typeof EffectDefinitionSchema>;
 export type ParticleEffectDefinition = Extract<EffectDefinition, { type: "particles" }>;
 export function isParticleEffect(effect: EffectDefinition): effect is ParticleEffectDefinition { return effect.type === "particles"; }
-const ParticleEmitter = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("particle-emitter"), effectId: Id, autoplay: Type.Boolean(), simulationSpace: Type.Union([Type.Literal("local"), Type.Literal("world")]), stopBehavior: Type.Union([Type.Literal("clear"), Type.Literal("finish")]) })]);
+const ParticleEmitter = Type.Composite([NodeBase, Type.Object({ type: Type.Literal("particle-emitter"), effectId: Id, autoplay: Type.Boolean(), simulationSpace: Type.Union([Type.Literal("local"), Type.Literal("world")]) })]);
 export const UINodeSchema = Type.Union([Container, HorizontalLayout, VerticalLayout, GridLayout, Image, Text, Spine, Button, PrefabInstance, ScrollView, Input, Slider, ProgressBar, ParticleEmitter]);
 export type UINode = Static<typeof UINodeSchema>;
 export type LayoutGroupNode = Extract<UINode, { type: "horizontal-layout" | "vertical-layout" | "grid-layout" }>;
