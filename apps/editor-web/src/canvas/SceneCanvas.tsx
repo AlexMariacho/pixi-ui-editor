@@ -9,6 +9,7 @@ import { EDITOR_COMMAND_IDS, editorCommandRegistry } from "../shared/editorComma
 import { selectionBounds, getParentLayoutSize } from "./bounds.js";
 import { ANCHOR_GIZMO_GAP, ANCHOR_GIZMO_HALF_WIDTH, ANCHOR_GIZMO_LENGTH, ARTBOARD_BORDER, ARTBOARD_FILL, CANVAS_BACKGROUND, PIVOT_GIZMO_HALF_SIZE, PIVOT_GIZMO_THICKNESS, REFERENCE_VIEWPORT_BORDER, RESIZE_HANDLES, SELECTION_COLOR, drawAnchorPetal, type ResizeHandle } from "./gizmos.js";
 import { ToolPanel, commandTitle } from "../panels/toolbar/ToolPanel.js";
+import { NodeCreateMenu } from "../panels/toolbar/NodeCreateMenu.js";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
@@ -892,18 +893,53 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
           ⟳
         </button>
         <span className="canvas-toolbar-divider" aria-hidden="true" />
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("container")}>+ Container</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("horizontal-layout")}>+ Horizontal Layout</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("vertical-layout")}>+ Vertical Layout</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("grid-layout")}>+ Grid Layout</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("scroll-view")}>+ Scroll View</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("image")}>+ Image</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("text")}>+ Text</button>
-        <button type="button" disabled={viewMode === "map"} onClick={() => addNode("input")}>+ Input</button>
-        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("slider")}>+ Slider</button>
-        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("progress-bar")}>+ Progress</button>
-        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "spine")} onClick={() => addNode("spine")}>+ Spine</button>
-        <button type="button" disabled={viewMode === "map" || !document.assets.some((asset) => asset.type === "image")} onClick={() => addNode("button")}>+ Button</button>
+        <NodeCreateMenu
+          label="Container"
+          disabled={viewMode === "map"}
+          onCreate={addNode}
+          sections={[
+            { label: "Container", items: [{ type: "container", label: "Container" }] },
+            {
+              label: "Auto layout",
+              items: [
+                { type: "horizontal-layout", label: "Horizontal" },
+                { type: "vertical-layout", label: "Vertical" },
+                { type: "grid-layout", label: "Grid" },
+              ],
+            },
+            { label: "Scroll", items: [{ type: "scroll-view", label: "Scroll View" }] },
+          ]}
+        />
+        <NodeCreateMenu
+          label="Content"
+          disabled={viewMode === "map"}
+          onCreate={addNode}
+          sections={[
+            {
+              items: [
+                { type: "image", label: "Image" },
+                { type: "text", label: "Text" },
+                { type: "spine", label: "Spine", disabled: !document.assets.some((asset) => asset.type === "spine") },
+              ],
+            },
+          ]}
+        />
+        <NodeCreateMenu
+          label="Control"
+          disabled={viewMode === "map"}
+          onCreate={addNode}
+          sections={[
+            {
+              items: [
+                { type: "button", label: "Button", disabled: !document.assets.some((asset) => asset.type === "image") },
+                { type: "input", label: "Input" },
+                { type: "slider", label: "Slider", disabled: !document.assets.some((asset) => asset.type === "image") },
+                { type: "progress-bar", label: "Progress", disabled: !document.assets.some((asset) => asset.type === "image") },
+              ],
+            },
+          ]}
+        />
+        <span className="canvas-toolbar-divider" aria-hidden="true" />
         <button type="button" className="toolbar-danger" disabled={deleteDisabled} title={commandTitle(EDITOR_COMMAND_IDS.deleteNode)} onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.deleteNode)}>Delete</button>
       </div>
       {editingPrefabName !== null && <div className="preset-editing-status">
