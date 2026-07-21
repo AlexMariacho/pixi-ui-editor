@@ -2,6 +2,7 @@ import { loadProjectDocument, parseProjectDocumentJson, resolveAnchoredTransform
 import { createStableId, validateProjectDocument, type Asset, type LayoutProfileId, type PrefabDefinition, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
 import sampleJson from "../../../../examples/sample-project/project.json";
 import { DOCUMENT_STORAGE_KEY, type AnchorRect, type EditingTarget, type EditorState } from "./types.js";
+import { recordHistoryCommit } from "./history.slice.js";
 
 export const sampleDocument = loadProjectDocument(sampleJson);
 export const firstScene = sampleDocument.scenes[0];
@@ -31,7 +32,7 @@ export function commitCandidate(state: EditorState, candidate: ProjectDocument, 
     return state;
   }
 
-  return { document: candidate };
+  return { document: candidate, ...recordHistoryCommit(state) };
 }
 
 /** The first root container of a scene is its technical screen boundary, not an editable hierarchy item. */

@@ -10,6 +10,26 @@ export function ToolPanel({ activeTool, viewMode }: { activeTool: EditorTool; vi
 
   return (
     <div className="canvas-tool-mode-group" role="group" aria-label="Viewport tools">
+      <button
+        type="button"
+        className="tool-panel-button"
+        title={commandTitle(EDITOR_COMMAND_IDS.undo)}
+        aria-label={commandTitle(EDITOR_COMMAND_IDS.undo)}
+        disabled={!editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.undo)}
+        onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.undo)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M5 12h9a5 5 0 0 1 0 10h-2" /></svg>
+      </button>
+      <button
+        type="button"
+        className="tool-panel-button"
+        title={commandTitle(EDITOR_COMMAND_IDS.redo)}
+        aria-label={commandTitle(EDITOR_COMMAND_IDS.redo)}
+        disabled={!editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.redo)}
+        onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.redo)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5m4-5h-9a5 5 0 0 0 0 10h2" /></svg>
+      </button>
       {tools.map(({ tool, commandId, icon }) => (
         <button
           key={tool}

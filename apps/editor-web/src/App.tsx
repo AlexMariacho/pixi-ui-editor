@@ -7,7 +7,7 @@ import { downloadProjectPackage } from "./shared/exportPackage.js";
 import { AssetsWindow } from "./panels/assets/AssetPanel.js";
 import { PresetsWindow } from "./panels/presets/PresetsPanel.js";
 import { useUiPrefsStore } from "./shared/uiPrefs.js";
-import { EDITOR_COMMAND_IDS, editorCommandRegistry, isEditorTextInput } from "./shared/editorCommands.js";
+import { EDITOR_COMMAND_IDS, dispatchEditorKeyboardEvent, editorCommandRegistry } from "./shared/editorCommands.js";
 import { openRuntimePreview, updateRuntimePreviews, type PreviewPayload } from "./panels/preview/RuntimePreview.js";
 import { SceneCanvas } from "./canvas/SceneCanvas.js";
 import { HierarchyTree } from "./panels/hierarchy/HierarchyTree.js";
@@ -41,12 +41,9 @@ export function App() {
   }, [activeProfile, sceneId]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isEditorTextInput(event.target)) return;
-      if (editorCommandRegistry.dispatchKeyboardEvent(event)) event.preventDefault();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Capture before Pixi/canvas handlers: they must not prevent document commands from reaching the registry.
+    window.addEventListener("keydown", dispatchEditorKeyboardEvent, true);
+    return () => window.removeEventListener("keydown", dispatchEditorKeyboardEvent, true);
   }, []);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
   const editingPrefab = document.prefabs.find((candidate) => candidate.id === editingPrefabId);

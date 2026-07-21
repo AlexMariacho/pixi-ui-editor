@@ -29,6 +29,10 @@ afterEach(() => {
     selectedNodeIds: [],
     selectedNodeId: null,
     editingPrefabId: null,
+    undoStack: [],
+    redoStack: [],
+    historyGestureActive: false,
+    historyGestureHasCommit: false,
   });
   vi.unstubAllGlobals();
 });

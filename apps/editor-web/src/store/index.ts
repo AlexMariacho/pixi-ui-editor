@@ -10,6 +10,7 @@ import { createSelectionSlice } from "./selection.slice.js";
 import { createSpineSlice } from "./spine.slice.js";
 import { createValueControlsSlice } from "./value-controls.slice.js";
 import { createParticlesSlice } from "./particles.slice.js";
+import { createHistorySlice } from "./history.slice.js";
 import { DOCUMENT_STORAGE_KEY, type EditorState } from "./types.js";
 export * from "./helpers.js";
 export * from "./types.js";
@@ -30,6 +31,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   progressBarPreviewValues: {},
   particlePlayback: {},
   particleDiagnostics: {},
+  ...createHistorySlice(set, get),
   ...createSelectionSlice(set, get),
   ...createScenesSlice(set, get),
   ...createNodesSlice(set, get),

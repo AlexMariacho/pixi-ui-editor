@@ -327,11 +327,16 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         pan = { pointerId: pan.pointerId, lastX: event.clientX, lastY: event.clientY };
         redrawSelectionRef.current();
       };
+      // Pixi's stage normally receives pointerup, but a canvas pointer capture can route the native
+      // event straight to the canvas. Finish document gestures from that reliable boundary as well.
+      let finishNodeGesture = (): void => undefined;
       const onPointerUp = (event: PointerEvent) => {
-        if (pan === null || event.pointerId !== pan.pointerId) return;
-        pan = null;
-        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-        canvas.style.cursor = useEditorStore.getState().activeTool === "pan" ? "grab" : "";
+        if (pan !== null && event.pointerId === pan.pointerId) {
+          pan = null;
+          if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+          canvas.style.cursor = useEditorStore.getState().activeTool === "pan" ? "grab" : "";
+        }
+        finishNodeGesture();
       };
 
       canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -432,7 +437,11 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         application.stage.off("pointermove", moveResizedNode);
         application.stage.off("pointerup", stopResize);
         application.stage.off("pointerupoutside", stopResize);
-        if (Object.keys(drag.patch).length === 0) return;
+        application.stage.off("pointercancel", stopResize);
+        if (Object.keys(drag.patch).length === 0) {
+          useEditorStore.getState().endHistoryGesture();
+          return;
+        }
         // patch посчитан в rendered-координатах — переводим обратно в хранимые (минус якорный офсет и stretch-дельта).
         const patch = { ...drag.patch };
         if (patch.x !== undefined) patch.x = roundTransformValue(patch.x - drag.anchorOffsetX);
@@ -440,6 +449,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
         if (patch.width !== undefined) patch.width = roundTransformValue(patch.width - drag.spanWidth);
         if (patch.height !== undefined) patch.height = roundTransformValue(patch.height - drag.spanHeight);
         useEditorStore.getState().updateNodeProfileTransform(drag.nodeId, patch);
+        useEditorStore.getState().endHistoryGesture();
       };
       const moveResizedNode = (event: FederatedPointerEvent) => {
         const drag = resizeDragRef.current;
@@ -506,9 +516,15 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
           scaleY: nodeView.scale.y,
           patch: {},
         };
+        state.beginHistoryGesture();
         application.stage.on("pointermove", moveResizedNode);
         application.stage.on("pointerup", stopResize);
         application.stage.on("pointerupoutside", stopResize);
+        application.stage.on("pointercancel", stopResize);
+      };
+      finishNodeGesture = () => {
+        stopDrag();
+        stopResize();
       };
 
       worldRef.current = world;
@@ -521,6 +537,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
 
     return () => {
       cancelled = true;
+      useEditorStore.getState().endHistoryGesture();
       removeDomListeners?.();
       worldRef.current = null;
       artboardRef.current = null;

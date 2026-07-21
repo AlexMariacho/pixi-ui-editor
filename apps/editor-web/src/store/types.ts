@@ -7,6 +7,12 @@ export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layo
 export type InputPatch = Partial<Pick<InputNode, "backgroundAssetId" | "placeholder" | "defaultValue" | "maxLength" | "secure" | "align" | "padding" | "cleanOnFocus" | "clipText" | "textStyle">>;
 export type SliderPatch = Partial<Pick<SliderNode, "backgroundAssetId" | "fillAssetId" | "handleAssetId" | "min" | "max" | "step" | "defaultValue" | "fillPadding" | "showValue" | "valueTextStyle">>;
 export type ProgressBarPatch = Partial<Pick<ProgressBarNode, "backgroundAssetId" | "fillAssetId" | "defaultProgress" | "fillPadding">>;
+export type HistoryEntry = {
+  document: ProjectDocument;
+  sceneId: string;
+  editingPrefabId: string | null;
+  selectedNodeIds: string[];
+};
 
 export type EditorState = {
   document: ProjectDocument;
@@ -27,6 +33,10 @@ export type EditorState = {
   progressBarPreviewValues: Record<string, number>;
   particlePlayback: Record<string, "play" | "pause" | "restart" | "step" | "stop">;
   particleDiagnostics: Record<string, { active: number; free: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean }>;
+  undoStack: HistoryEntry[];
+  redoStack: HistoryEntry[];
+  historyGestureActive: boolean;
+  historyGestureHasCommit: boolean;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -79,6 +89,10 @@ export type EditorState = {
   deleteParticleEffect(effectId: string): void;
   controlParticlePlayback(nodeId: string, action: "play" | "pause" | "restart" | "step" | "stop"): void;
   reportParticleDiagnostics(nodeId: string, diagnostics: { active: number; free: number; dropped: number; playing: boolean; stopped: boolean; disposed: boolean }): void;
+  undo(): void;
+  redo(): void;
+  beginHistoryGesture(): void;
+  endHistoryGesture(): void;
   addNode(type: AddableNodeType): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
   moveNode(nodeId: string, placement: { parentId: string | null; index: number }): void;
