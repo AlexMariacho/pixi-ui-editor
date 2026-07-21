@@ -58,6 +58,20 @@ export function isCurrentPreset(preset: ScreenPreset, viewport: { width: number;
   return viewport.width === expectedViewport.width && viewport.height === expectedViewport.height;
 }
 
+type PresetSelection = { groupLabel: string; presetLabel: string };
+
+// Не полагаемся только на совпадение пикселей: разные категории (Mobile/Desktop/Tablet)
+// могут содержать пресеты с одинаковыми короткой/длинной сторонами, и подбор "первого совпадения"
+// подсвечивал бы чужой пресет не в той вкладке. Поэтому явный выбор запоминается по label.
+function findPresetMatch(viewport: { width: number; height: number }, profile: LayoutProfileId, groupOrder: readonly string[]): { groupLabel: string; preset: ScreenPreset } | undefined {
+  for (const groupLabel of groupOrder) {
+    const group = SCREEN_PRESET_GROUPS.find((candidate) => candidate.label === groupLabel);
+    const preset = group?.presets.find((candidate) => isCurrentPreset(candidate, viewport, profile));
+    if (preset !== undefined) return { groupLabel, preset };
+  }
+  return undefined;
+}
+
 export function ScreenNumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   const [text, setText] = useState(() => String(value));
 
@@ -92,10 +106,19 @@ export function ScreenResolutionsMenu({
   const preferredGroupLabels = activeProfile === "desktop"
     ? ["Desktop", "Tablet", "Mobile"]
     : ["Mobile", "Tablet", "Desktop"];
-  const selectedPreset = preferredGroupLabels
-    .flatMap((groupLabel) => SCREEN_PRESET_GROUPS.find((group) => group.label === groupLabel)?.presets ?? [])
-    .find((preset) => isCurrentPreset(preset, viewport, activeProfile));
-  const [activeGroupLabel, setActiveGroupLabel] = useState(() => preferredGroupLabels[0]);
+  // Явно выбранный пресет для каждой ориентации — чтобы переключение между Horizontal/Vertical
+  // восстанавливало именно ту вкладку и тот пункт, который выбирал пользователь, а не первое
+  // совпадение по пикселям.
+  const [selectionByProfile, setSelectionByProfile] = useState<Partial<Record<LayoutProfileId, PresetSelection>>>({});
+  const remembered = selectionByProfile[activeProfile];
+  const rememberedPreset = remembered !== undefined
+    ? SCREEN_PRESET_GROUPS.find((group) => group.label === remembered.groupLabel)?.presets.find((preset) => preset.label === remembered.presetLabel)
+    : undefined;
+  const resolvedSelection = rememberedPreset !== undefined && isCurrentPreset(rememberedPreset, viewport, activeProfile)
+    ? { groupLabel: remembered!.groupLabel, preset: rememberedPreset }
+    : findPresetMatch(viewport, activeProfile, preferredGroupLabels);
+  const selectedPreset = resolvedSelection?.preset;
+  const [activeGroupLabel, setActiveGroupLabel] = useState(() => resolvedSelection?.groupLabel ?? preferredGroupLabels[0]);
   const activeGroup = SCREEN_PRESET_GROUPS.find((group) => group.label === activeGroupLabel) ?? SCREEN_PRESET_GROUPS[0];
 
   useEffect(() => {
@@ -113,12 +136,19 @@ export function ScreenResolutionsMenu({
     };
   }, []);
 
+  // При открытии меню или смене ориентации показываем вкладку с реально выбранным пресетом.
+  useEffect(() => {
+    if (!isOpen) return;
+    setActiveGroupLabel(resolvedSelection?.groupLabel ?? preferredGroupLabels[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, activeProfile]);
+
   const updateViewportDimension = (dimension: "width" | "height", value: number) => {
     updateReferenceViewport(activeProfile, { ...viewport, [dimension]: value });
   };
-  const applyPreset = (preset: ScreenPreset) => {
+  const applyPreset = (groupLabel: string, preset: ScreenPreset) => {
     updateReferenceViewport(activeProfile, toActiveViewport(preset, activeProfile));
-    setIsOpen(false);
+    setSelectionByProfile((current) => ({ ...current, [activeProfile]: { groupLabel, presetLabel: preset.label } }));
   };
 
   return (
@@ -156,7 +186,7 @@ export function ScreenResolutionsMenu({
                   type="radio"
                   name="screen-resolution"
                   checked={selectedPreset?.label === preset.label}
-                  onChange={() => applyPreset(preset)}
+                  onChange={() => applyPreset(activeGroup.label, preset)}
                 />
                 <span>{getPresetLabel(preset, activeProfile)}</span>
               </label>
