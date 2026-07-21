@@ -4,6 +4,7 @@ import { getCachedAtlasFrameSize, getCachedImageAssetSize, getCachedSpineAssetSi
 import { getNodeWorldMatrix, transformRelativeToParent, worldPointToLocal } from "../canvas/transformCoordinates.js";
 import { commitCandidate, createAnchorPatch, getEditingTarget, getParentLayoutSize, getSceneRoot, resolveAssetReference } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
+import { createDefaultParticleEffect } from "./particles.slice.js";
 type Keys = "addNode" | "addNodeFromAsset" | "updateNode" | "updateNodeProfileTransform" | "updateNodeProfileTransforms" | "updateLayoutGroup" | "updateLayoutItem" | "setLayoutGroupBackgroundAsset" | "updateScrollView" | "updateInput" | "setNodeProfileAnchor" | "setNodeOrientationVisibility" | "moveNode" | "deleteNode";
 export const createNodesSlice: EditorSlice<Keys> = (set) => ({
   setLayoutGroupBackgroundAsset: (nodeId, assetId) => set((state) => {
@@ -212,7 +213,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       candidate.prefabs.reduce((count, prefab) => count + prefab.nodes.filter((node) => node.type === type).length, 0),
     ) + 1;
     // Текстовые ноды по своей природе прямоугольны: квадратный дефолт под fontSize 24 выглядит нелепо.
-    const defaultSize = type === "spine" ? { width: 200, height: 200 } : type === "text" || type === "input" || type === "slider" || type === "progress-bar" ? { width: 200, height: 40 } : { width: 100, height: 100 };
+    const defaultSize = type === "spine" ? { width: 200, height: 200 } : type === "text" || type === "input" || type === "slider" || type === "progress-bar" ? { width: 200, height: 40 } : type === "particle-emitter" ? { width: 160, height: 160 } : { width: 100, height: 100 };
     const transform = {
       x: 0,
       y: 0,
@@ -294,6 +295,13 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
       node = type === "slider"
         ? { ...base, type, backgroundAssetId: asset.id, fillAssetId: asset.id, handleAssetId: asset.id, min: 0, max: 100, step: 1, defaultValue: 50, fillPadding, showValue: false }
         : { ...base, type, backgroundAssetId: asset.id, fillAssetId: asset.id, defaultProgress: 50, fillPadding };
+    } else if (type === "particle-emitter") {
+      const existing = candidate.effects.find((effect) => effect.type === "particles");
+      const image = candidate.assets.find((asset) => asset.type === "image");
+      if (existing === undefined && image === undefined) { console.warn("Cannot add a particle emitter: the project document does not contain an image asset."); return state; }
+      const effect = existing ?? createDefaultParticleEffect(createStableId(), `Particles ${candidate.effects.filter((item) => item.type === "particles").length + 1}`);
+      if (existing === undefined) { if (effect.particle.visual.source.type === "single") effect.particle.visual.source.assetId = image!.id; candidate.effects.push(effect); }
+      node = { ...base, type, effectId: effect.id, autoplay: true, simulationSpace: "local", stopBehavior: "clear" };
     } else {
       node = { ...base, type };
     }

@@ -78,6 +78,7 @@ export function createProjectDocumentFixture(): ProjectDocument {
         source: { uri: "assets/logo.png", mediaType: "image/png" },
       },
     ],
+    effects: [],
     prefabs: [
       {
         id: prefab,

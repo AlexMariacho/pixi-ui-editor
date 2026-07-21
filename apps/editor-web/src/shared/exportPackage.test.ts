@@ -24,6 +24,14 @@ const sourceDocument: ProjectDocument = {
       },
     },
   ],
+  effects: [{
+    id: "20000000-0000-4000-8000-000000000003", name: "Export particles", type: "particles", maxParticles: 8, seed: 7,
+    emission: { delay: 0, duration: 1, loop: false, rate: 0, bursts: [{ time: 0, count: 1 }] },
+    particle: {
+      lifetime: { min: 1, max: 1 }, spawnShape: { type: "point" }, movement: { speed: { min: 0, max: 0 }, directionDegrees: 0, spreadDegrees: 0, accelerationX: 0, accelerationY: 0, drag: 0 },
+      visual: { source: { type: "sequence", assetIds: [imageAssetId], fps: 12, loop: true, randomStartFrame: false }, alpha: { start: 1, end: 0 }, scale: { start: { min: 1, max: 1 }, end: { min: 1, max: 1 } }, tint: { start: "#FFFFFF", end: "#FFFFFF" }, rotation: { initialDegrees: { min: 0, max: 0 }, angularVelocityDegrees: { min: 0, max: 0 } }, blendMode: "normal" },
+    },
+  }],
   prefabs: [],
   scenes: [],
 };
@@ -61,6 +69,7 @@ describe("buildExportEntries", () => {
     expect(projectJson).toBeDefined();
     const loaded = parseProjectDocumentJson(strFromU8(projectJson!));
     expect(validateProjectDocument(loaded).valid).toBe(true);
+    expect(loaded.effects[0]).toMatchObject({ type: "particles", particle: { visual: { source: { type: "sequence", assetIds: [imageAssetId] } } } });
     expect(Object.keys(archive).sort()).toEqual([
       `assets/${imageAssetId}/Hero-Icon.png`,
       `assets/${spineAssetId}/hero.atlas`,

@@ -1,5 +1,5 @@
 import { type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
-import { isLayoutGroup, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
+import { isLayoutGroup, isParticleEffect, type EffectDefinition, type LayoutProfileId, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
 import { Container, Texture } from "pixi.js";
 import { loadSceneSpines } from "./assets/spine.js";
 import { loadSceneTextures, type FileUrlResolver } from "./assets/textures.js";
@@ -58,7 +58,7 @@ export function buildSceneView(
         const prefab = document.prefabs.find((candidate) => candidate.id === prefabId);
         if (prefab === undefined || expandingPrefabIds.has(prefabId)) return undefined;
         return buildOwner(prefab, false, new Set([...expandingPrefabIds, prefabId]), { width: transform.width, height: transform.height });
-      }, fonts, sounds);
+      }, fonts, sounds, node.type === "particle-emitter" ? document.effects.find((effect) => effect.id === node.effectId && isParticleEffect(effect)) : undefined);
       if (isLayoutGroup(node)) applyLayoutGroup(view, node, profile, parentSize);
       // Yoga owns only the group's inner layoutContent; the outer NodeView keeps authored transform.
       view.update(node, profile, parentSize);
@@ -111,9 +111,10 @@ export function buildSceneView(
  * Applies a node's resolved transform, visibility, and content to an existing display object,
  * so editors can update views in place without rebuilding the scene tree.
  */
-export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize, parentNode?: UINode): void {
+export function updateNodeView(view: Container, node: UINode, profile: LayoutProfileId, parentSize?: LayoutSize, parentNode?: UINode, effect?: EffectDefinition): void {
   if (isLayoutGroup(node)) applyLayoutGroup(view, node, profile, parentSize);
   if (!(view instanceof NodeView)) return;
+  if (node.type === "particle-emitter" && effect !== undefined && isParticleEffect(effect) && "syncEffect" in view && typeof (view as { syncEffect?: unknown }).syncEffect === "function") (view as { syncEffect(effect: import("@pixi-ui-editor/schema").ParticleEffectDefinition): void }).syncEffect(effect);
   if (parentNode !== undefined && isLayoutGroup(parentNode) && view.parent instanceof LayoutItemContainer) {
     applyLayoutItem(view.parent, node, parentNode, profile);
   } else if (parentNode !== undefined && parentNode.type === "scroll-view" && view.parent instanceof ScrollItemContainer) {
@@ -128,6 +129,12 @@ export function updateNodeView(view: Container, node: UINode, profile: LayoutPro
 export function previewNodeView(view: Container, node: UINode, profile: LayoutProfileId, transform: UINode["transform"]): void {
   if (isLayoutGroup(node)) applyLayoutGroup(view, node, profile, undefined, { width: transform.width, height: transform.height });
   if (view instanceof NodeView) view.preview(node, transform, resolveProfileTransform(node, profile).visible);
+}
+
+/** Hosts call this from their own Application ticker; runtime never subscribes to Ticker.shared. */
+export function updateParticleEmitters(root: Container, deltaSeconds: number): void {
+  const visit = (view: Container): void => { if ("updateParticles" in view && typeof (view as { updateParticles?: unknown }).updateParticles === "function") (view as { updateParticles(delta: number): void }).updateParticles(deltaSeconds); view.children.forEach(visit); };
+  visit(root);
 }
 
 /** Lists the nodes a scene renders, including nodes of prefab definitions its prefab instances expand to. */

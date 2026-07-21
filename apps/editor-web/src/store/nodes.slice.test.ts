@@ -46,6 +46,37 @@ describe("addNode", () => {
     expect(addedNode).toMatchObject({ type: "button", parentId: rootNodeId, enabled: true, states: { normalAssetId: imageAssetId } });
     expect(validateProjectDocument(document).valid).toBe(true);
   });
+
+  it("creates a particle emitter with a valid reusable default, then duplicates and reassigns it", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("particle-emitter");
+    const emitter = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
+    expect(emitter.type).toBe("particle-emitter");
+    if (emitter.type !== "particle-emitter") throw new Error("Expected a particle emitter");
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+    useEditorStore.getState().duplicateParticleEffect(emitter.id);
+    const duplicated = useEditorStore.getState().document.scenes[0]!.nodes.find((node) => node.id === emitter.id)!;
+    if (duplicated.type !== "particle-emitter") throw new Error("Expected a particle emitter");
+    useEditorStore.getState().assignParticleEffect(emitter.id, emitter.effectId);
+    expect(validateProjectDocument(useEditorStore.getState().document).valid).toBe(true);
+  });
+});
+
+describe("particle definitions", () => {
+  it("refuses deleting a used definition and permits it after references are removed", () => {
+    const rootNodeId = initialDocument.scenes[0]!.rootNodeIds[0]!;
+    useEditorStore.getState().selectNode(rootNodeId);
+    useEditorStore.getState().addNode("particle-emitter");
+    const emitter = useEditorStore.getState().document.scenes[0]!.nodes.at(-1)!;
+    if (emitter.type !== "particle-emitter") throw new Error("Expected a particle emitter");
+    const before = structuredClone(useEditorStore.getState().document);
+    useEditorStore.getState().deleteParticleEffect(emitter.effectId);
+    expect(useEditorStore.getState().document).toEqual(before);
+    useEditorStore.getState().deleteNode(emitter.id);
+    useEditorStore.getState().deleteParticleEffect(emitter.effectId);
+    expect(useEditorStore.getState().document.effects.some((effect) => effect.id === emitter.effectId)).toBe(false);
+  });
 });
 
 describe("deleteNode", () => {

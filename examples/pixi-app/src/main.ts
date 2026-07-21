@@ -3,6 +3,7 @@ import {
   buildSceneView,
   createSceneAudioPlayback,
   InputNodeView,
+  ParticleEmitterNodeView,
   loadSceneFonts,
   loadSceneSounds,
   loadSceneSpines,
@@ -11,6 +12,7 @@ import {
   ProgressBarNodeView,
   resolveProfileForViewport,
   SliderNodeView,
+  updateParticleEmitters,
   type SkeletonData,
   type Sound,
 } from "@pixi-ui-editor/runtime-pixi";
@@ -25,6 +27,7 @@ const CONTROL_IDS = {
   input: "10000000-0000-4000-8000-000000000031",
   slider: "10000000-0000-4000-8000-000000000032",
   progress: "10000000-0000-4000-8000-000000000033",
+  celebration: "10000000-0000-4000-8000-000000000063",
 } as const;
 
 function showHint(lines: string[]): void {
@@ -118,6 +121,7 @@ async function main(): Promise<void> {
 
   let profile = resolveProfileForViewport(packageDocument.settings, window.innerWidth, window.innerHeight);
   let sceneRoot: Container | null = null;
+  let particleTicker: ((ticker: { deltaMS: number }) => void) | undefined;
   let buildToken = 0;
   const textureCache = new Map<string, Texture>();
   const spineCache = new Map<string, SkeletonData>();
@@ -151,6 +155,7 @@ async function main(): Promise<void> {
     const input = findControl(scene, nodeViews, "controls.playerName", CONTROL_IDS.input, InputNodeView);
     const slider = findControl(scene, nodeViews, "controls.energy", CONTROL_IDS.slider, SliderNodeView);
     const progress = findControl(scene, nodeViews, "display.energy", CONTROL_IDS.progress, ProgressBarNodeView);
+    const celebration = findControl(scene, nodeViews, "effects.celebration", CONTROL_IDS.celebration, ParticleEmitterNodeView);
 
     input.value = runtimeState.name;
     slider.value = runtimeState.energy;
@@ -174,9 +179,14 @@ async function main(): Promise<void> {
       status.show("Runtime values reset · document unchanged");
     });
 
+    reset.onPress.connect(() => celebration.restart());
+
+    if (sceneRoot !== null && particleTicker !== undefined) app.ticker.remove(particleTicker);
     sceneRoot?.destroy({ children: true });
     sceneRoot = root;
     app.stage.addChild(root);
+    particleTicker = (ticker) => updateParticleEmitters(root, ticker.deltaMS / 1_000);
+    app.ticker.add(particleTicker);
     layoutSceneRoot();
     audioPlayback.update(scene.audio, sounds);
   };

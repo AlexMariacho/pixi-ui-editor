@@ -1,4 +1,4 @@
-import { BUTTON_STATE_KEYS, type UINode } from "@pixi-ui-editor/schema";
+import { BUTTON_STATE_KEYS, type ParticleEffectDefinition, type UINode } from "@pixi-ui-editor/schema";
 import { type SkeletonData } from "@esotericsoftware/spine-pixi-v8";
 import type { Sound } from "@pixi/sound";
 import { Container, Texture } from "pixi.js";
@@ -9,8 +9,9 @@ import { NodeView, type SceneInteractionMode } from "./NodeView.js";
 import { ScrollViewNodeView } from "./ScrollViewNodeView.js";
 import { SpineNodeView } from "./SpineNodeView.js";
 import { ProgressBarNodeView, SliderNodeView } from "./ValueControlNodeViews.js";
+import { ParticleEmitterNodeView } from "./ParticleEmitterNodeView.js";
 
-export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>, sounds?: ReadonlyMap<string, Sound>): NodeView {
+export function createNodeView(node: UINode, interaction: SceneInteractionMode, textures?: ReadonlyMap<string, Texture>, spines?: ReadonlyMap<string, SkeletonData>, expandPrefab?: (prefabId: string) => Container | undefined, fonts?: ReadonlyMap<string, string>, sounds?: ReadonlyMap<string, Sound>, effect?: ParticleEffectDefinition): NodeView {
   switch (node.type) {
     case "container":
       return new ContainerNodeView();
@@ -34,6 +35,8 @@ export function createNodeView(node: UINode, interaction: SceneInteractionMode, 
       return new SliderNodeView(node, textures, interaction, fonts);
     case "progress-bar":
       return new ProgressBarNodeView(node, textures);
+    case "particle-emitter":
+      return effect === undefined ? new ContainerNodeView() : new ParticleEmitterNodeView(effect, textures);
     case "prefab-instance":
       return new PrefabInstanceNodeView(expandPrefab?.(node.prefabId));
   }
@@ -82,5 +85,7 @@ export function collectNodeAssetIds(node: UINode): string[] {
     }
     case "progress-bar":
       return [node.backgroundAssetId, node.fillAssetId];
+    case "particle-emitter":
+      return [];
   }
 }

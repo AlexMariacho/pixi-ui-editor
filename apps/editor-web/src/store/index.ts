@@ -9,6 +9,7 @@ import { createScenesSlice } from "./scenes.slice.js";
 import { createSelectionSlice } from "./selection.slice.js";
 import { createSpineSlice } from "./spine.slice.js";
 import { createValueControlsSlice } from "./value-controls.slice.js";
+import { createParticlesSlice } from "./particles.slice.js";
 import { DOCUMENT_STORAGE_KEY, type EditorState } from "./types.js";
 export * from "./helpers.js";
 export * from "./types.js";
@@ -27,6 +28,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   buttonPreviewStates: {},
   sliderPreviewValues: {},
   progressBarPreviewValues: {},
+  particlePlayback: {},
+  particleDiagnostics: {},
   ...createSelectionSlice(set, get),
   ...createScenesSlice(set, get),
   ...createNodesSlice(set, get),
@@ -35,6 +38,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   ...createSpineSlice(set, get),
   ...createButtonSlice(set, get),
   ...createValueControlsSlice(set, get),
+  ...createParticlesSlice(set, get),
 }));
 useEditorStore.subscribe((state, previousState) => {
   if (state.document === previousState.document) return;

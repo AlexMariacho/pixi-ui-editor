@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "project": {
     "id": "10000000-0000-4000-8000-000000000001",
     "name": "Sample UI Project"
@@ -33,6 +33,18 @@
       }
     }
   ],
+  "effects": [
+    {
+      "id": "10000000-0000-4000-8000-000000000060", "name": "Ambient Sparks", "type": "particles", "maxParticles": 24, "seed": 1101,
+      "emission": { "delay": 0, "duration": 4, "loop": true, "rate": 5, "bursts": [] },
+      "particle": { "lifetime": { "min": 1.2, "max": 2.4 }, "spawnShape": { "type": "point" }, "movement": { "speed": { "min": 16, "max": 34 }, "directionDegrees": 270, "spreadDegrees": 70, "accelerationX": 0, "accelerationY": -4, "drag": 0 }, "visual": { "source": { "type": "random", "assetIds": ["10000000-0000-4000-8000-000000000005", "10000000-0000-4000-8000-000000000010"] }, "alpha": { "start": 0.7, "end": 0 }, "scale": { "start": { "min": 0.15, "max": 0.25 }, "end": { "min": 0.05, "max": 0.1 } }, "tint": { "start": "#67E8F9", "end": "#C4B5FD" }, "rotation": { "initialDegrees": { "min": 0, "max": 360 }, "angularVelocityDegrees": { "min": -45, "max": 45 } }, "blendMode": "add" } }
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000061", "name": "Celebration Burst", "type": "particles", "maxParticles": 48, "seed": 2202,
+      "emission": { "delay": 0, "duration": 0.2, "loop": false, "rate": 0, "bursts": [{ "time": 0, "count": 28 }] },
+      "particle": { "lifetime": { "min": 0.8, "max": 1.5 }, "spawnShape": { "type": "point" }, "movement": { "speed": { "min": 80, "max": 170 }, "directionDegrees": 270, "spreadDegrees": 360, "accelerationX": 0, "accelerationY": 130, "drag": 0.1 }, "visual": { "source": { "type": "sequence", "assetIds": ["10000000-0000-4000-8000-000000000010", "10000000-0000-4000-8000-000000000011", "10000000-0000-4000-8000-000000000012"], "fps": 12, "loop": true, "randomStartFrame": false }, "alpha": { "start": 1, "end": 0 }, "scale": { "start": { "min": 0.15, "max": 0.3 }, "end": { "min": 0.08, "max": 0.14 } }, "tint": { "start": "#FDE68A", "end": "#F472B6" }, "rotation": { "initialDegrees": { "min": 0, "max": 360 }, "angularVelocityDegrees": { "min": -180, "max": 180 } }, "blendMode": "add" } }
+    }
+  ],
   "prefabs": [],
   "scenes": [
     {
@@ -56,7 +68,9 @@
             "10000000-0000-4000-8000-000000000020",
             "10000000-0000-4000-8000-000000000030",
             "10000000-0000-4000-8000-000000000040",
-            "10000000-0000-4000-8000-000000000050"
+            "10000000-0000-4000-8000-000000000050",
+            "10000000-0000-4000-8000-000000000062",
+            "10000000-0000-4000-8000-000000000063"
           ],
           "visible": true,
           "transform": { "x": 0, "y": 0, "width": 1920, "height": 1080, "scaleX": 1, "scaleY": 1, "rotation": 0 },
@@ -251,7 +265,9 @@
         { "id": "10000000-0000-4000-8000-000000000051", "name": "Normal State", "type": "image", "assetId": "10000000-0000-4000-8000-000000000010", "parentId": "10000000-0000-4000-8000-000000000050", "children": [], "visible": true, "transform": { "x": 0, "y": 0, "width": 240, "height": 140, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutItem": { "flexGrow": 0, "flexShrink": 0 } },
         { "id": "10000000-0000-4000-8000-000000000052", "name": "Hover State", "type": "image", "assetId": "10000000-0000-4000-8000-000000000011", "parentId": "10000000-0000-4000-8000-000000000050", "children": [], "visible": true, "transform": { "x": 0, "y": 0, "width": 240, "height": 140, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutItem": { "flexGrow": 0, "flexShrink": 0 } },
         { "id": "10000000-0000-4000-8000-000000000053", "name": "Pressed State", "type": "image", "assetId": "10000000-0000-4000-8000-000000000012", "parentId": "10000000-0000-4000-8000-000000000050", "children": [], "visible": true, "transform": { "x": 0, "y": 0, "width": 240, "height": 140, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutItem": { "flexGrow": 0, "flexShrink": 0 } },
-        { "id": "10000000-0000-4000-8000-000000000054", "name": "Disabled State", "type": "image", "assetId": "10000000-0000-4000-8000-000000000013", "parentId": "10000000-0000-4000-8000-000000000050", "children": [], "visible": true, "transform": { "x": 0, "y": 0, "width": 240, "height": 140, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutItem": { "flexGrow": 0, "flexShrink": 0 } }
+        { "id": "10000000-0000-4000-8000-000000000054", "name": "Disabled State", "type": "image", "assetId": "10000000-0000-4000-8000-000000000013", "parentId": "10000000-0000-4000-8000-000000000050", "children": [], "visible": true, "transform": { "x": 0, "y": 0, "width": 240, "height": 140, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutItem": { "flexGrow": 0, "flexShrink": 0 } },
+        { "id": "10000000-0000-4000-8000-000000000062", "name": "Ambient Sparks", "type": "particle-emitter", "effectId": "10000000-0000-4000-8000-000000000060", "autoplay": true, "simulationSpace": "local", "stopBehavior": "clear", "parentId": "10000000-0000-4000-8000-000000000003", "children": [], "visible": true, "transform": { "x": 1600, "y": 160, "width": 160, "height": 100, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutOverrides": { "mobile": { "transform": { "x": 265, "y": 80, "width": 90, "height": 64 } } } },
+        { "id": "10000000-0000-4000-8000-000000000063", "name": "Celebration", "type": "particle-emitter", "effectId": "10000000-0000-4000-8000-000000000061", "autoplay": false, "simulationSpace": "world", "stopBehavior": "clear", "parentId": "10000000-0000-4000-8000-000000000003", "children": [], "visible": true, "binding": "effects.celebration", "transform": { "x": 960, "y": 500, "width": 120, "height": 80, "scaleX": 1, "scaleY": 1, "rotation": 0 }, "layoutOverrides": { "mobile": { "transform": { "x": 195, "y": 390, "width": 70, "height": 54 } } } }
       ]
     }
   ]

@@ -33,7 +33,7 @@ export function useNumberText(value: number, format: (value: number) => string =
   return [text, setText] as const;
 }
 
-export function NumberField({ label, value, step, onChange }: { label: string; value: number; step: number; onChange: (value: number) => void }) {
+export function NumberField({ label = "", value, step = 1, onChange }: { label?: string; value: number; step?: number; onChange: (value: number) => void }) {
   const [text, setText] = useNumberText(value);
 
   const applyValue = (event: ChangeEvent<HTMLInputElement>) => {

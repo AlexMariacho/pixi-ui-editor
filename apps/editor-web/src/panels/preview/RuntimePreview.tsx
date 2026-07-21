@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { buildSceneView, createSceneAudioPlayback, loadProjectSounds, loadSceneFonts, loadSceneSpines, loadSceneTextures, type SkeletonData, type Sound } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, createSceneAudioPlayback, loadProjectSounds, loadSceneFonts, loadSceneSpines, loadSceneTextures, updateParticleEmitters, type SkeletonData, type Sound } from "@pixi-ui-editor/runtime-pixi";
 import type { LayoutProfileId, ProjectDocument } from "@pixi-ui-editor/schema";
 import { Application, Container, type Spritesheet, type Texture } from "pixi.js";
 import { resolveFileUrl } from "../../shared/assets.js";
@@ -85,6 +85,7 @@ export function RuntimePreview() {
     let initialized = false;
     let payload: PreviewPayload | undefined;
     let sceneRoot: Container | undefined;
+    let particleTicker: ((ticker: { deltaMS: number }) => void) | undefined;
     let buildToken = 0;
     let layoutFrame = 0;
     const app = new Application();
@@ -126,11 +127,14 @@ export function RuntimePreview() {
           return;
         }
         if (sceneRoot !== undefined) {
+          if (particleTicker !== undefined) app.ticker.remove(particleTicker);
           app.stage.removeChild(sceneRoot);
           sceneRoot.destroy({ children: true });
         }
         sceneRoot = root;
         app.stage.addChild(root);
+        particleTicker = (ticker) => updateParticleEmitters(root, ticker.deltaMS / 1_000);
+        app.ticker.add(particleTicker);
         layoutScene();
         const scene = currentPayload.document.scenes.find((candidate) => candidate.id === currentPayload.sceneId);
         audioPlayback.update(scene?.audio, sounds);
@@ -189,6 +193,7 @@ export function RuntimePreview() {
       window.removeEventListener("resize", onResize);
       audioPlayback.stop();
       if (sceneRoot !== undefined) {
+        if (particleTicker !== undefined) app.ticker.remove(particleTicker);
         app.stage.removeChild(sceneRoot);
         sceneRoot.destroy({ children: true });
       }

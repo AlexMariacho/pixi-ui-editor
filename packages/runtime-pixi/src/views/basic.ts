@@ -66,7 +66,9 @@ export class TextNodeView extends NodeView {
     const style = node.style;
     if (style === undefined) return;
     this.content.style = { fontFamily: style.fontAssetId === undefined ? style.fontFamily : this.fonts?.get(style.fontAssetId) ?? style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, fontStyle: style.fontStyle, fill: style.fill, align: style.align, wordWrap: style.wordWrap, breakWords: style.breakWords, wordWrapWidth: transform.width, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, stroke: style.stroke === undefined ? undefined : { color: style.stroke.color, width: style.stroke.width } };
-    const bounds = this.content.getLocalBounds();
+    // Headless loaders and schema tests intentionally have no browser canvas. In that boundary
+    // text still owns its authored rectangle; browser rendering keeps the precise measurement.
+    const bounds = typeof globalThis.document === "undefined" ? { x: 0, y: 0, width: 0, height: 0 } : this.content.getLocalBounds();
     this.content.x = style.align === "center" ? (transform.width - bounds.width) / 2 - bounds.x : style.align === "right" ? transform.width - bounds.width - bounds.x : -bounds.x;
     this.content.y = style.verticalAlign === "middle" ? (transform.height - bounds.height) / 2 - bounds.y : style.verticalAlign === "bottom" ? transform.height - bounds.height - bounds.y : -bounds.y;
   }

@@ -11,6 +11,7 @@ import { LayoutGroupSection } from "./sections/LayoutGroupSection.js";
 import { ProgressBarSection, SliderSection } from "./sections/ValueControlsSection.js";
 import { WindowSection } from "./sections/WindowSection.js";
 import { useEditorStore } from "../../store/index.js";
+import { ParticleSection } from "./sections/ParticleSection.js";
 
 export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UINode | undefined; readOnly?: boolean }) {
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
@@ -27,6 +28,7 @@ export function Inspector({ selectedNode, readOnly = false }: { selectedNode: UI
     {selectedNode.type === "input" && <InputSection node={selectedNode} />}
     {selectedNode.type === "slider" && <SliderSection node={selectedNode} />}
     {selectedNode.type === "progress-bar" && <ProgressBarSection node={selectedNode} />}
+    {selectedNode.type === "particle-emitter" && <ParticleSection node={selectedNode} />}
     <TransformSection node={selectedNode} readOnly={readOnly} />
     {selectedNode.type === "text" && <TextSection node={selectedNode} />}
   </fieldset>;

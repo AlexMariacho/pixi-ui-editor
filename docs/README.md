@@ -16,3 +16,6 @@
 - [Итерация 08 — завершённый vertical slice UI-компонентов, текста и layout groups](tasks/iteration-08-ui-components-text-and-layouts/README.md)
 - [Итерация 09 — текстурные атласы и звук](tasks/iteration-09-atlases-and-audio/README.md)
 - [Итерация 10 — навигация и preview в окне Assets](tasks/iteration-10-assets-browser-ux/README.md)
+- [Итерация 11 — расширение редактора и runtime](tasks/iteration-11-editor-runtime-extensions/README.md)
+- [Итерация 12 — проект как папка на диске](tasks/iteration-12-project-workspace/README.md)
+- [Iteration bonus — undo/redo](tasks/iteration-bonus-undo-redo/README.md)

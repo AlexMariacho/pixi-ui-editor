@@ -1,10 +1,11 @@
-import { Sound, type IMediaInstance } from "@pixi/sound";
+import type { Sound, IMediaInstance } from "@pixi/sound";
 import type { ProjectDocument, Scene } from "@pixi-ui-editor/schema";
 import { collectRenderedNodes } from "../scene.js";
 import { collectNodeAssetIds } from "../views/createNodeView.js";
 import type { FileUrlResolver } from "./textures.js";
 
 async function loadSound(source: ArrayBuffer): Promise<Sound> {
+  const { Sound } = await import("@pixi/sound");
   return new Promise((resolve, reject) => {
     let created: Sound;
     try {

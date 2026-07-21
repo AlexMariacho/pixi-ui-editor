@@ -4,22 +4,38 @@ import { serializeProjectDocument, type ProjectDocument, type UINode } from "@pi
 import { Container, Sprite, Texture } from "pixi.js";
 import { TextureAtlas } from "@esotericsoftware/spine-pixi-v8";
 import { assignAtlasPageTextures, buildSceneView, ButtonNodeView, fitSpineToTransform, NodeView, parseProjectDocumentJson, ProjectDocumentJsonParseError, resolveAnchoredTransform, resolveProfileForViewport, resolveProfileTransform } from "./index.js";
+import { createNodeView } from "./views/createNodeView.js";
+import { ContainerNodeView } from "./views/basic.js";
 
 const sampleUrl = new URL("../../../examples/sample-project/project.json", import.meta.url);
 const sampleJson = readFileSync(sampleUrl, "utf8");
 const ids = {
   scene: "10000000-0000-4000-8000-000000000002",
   root: "10000000-0000-4000-8000-000000000003",
-  image: "10000000-0000-4000-8000-000000000004",
-  asset: "10000000-0000-4000-8000-000000000005",
+  image: "10000000-0000-4000-8000-000000000051",
+  asset: "10000000-0000-4000-8000-000000000010",
   text: "10000000-0000-4000-8000-000000000006",
 };
 const clone = <T>(value: T): T => structuredClone(value);
 const buttonIds = { node: "10000000-0000-4000-8000-000000000008", pressedAsset: "10000000-0000-4000-8000-000000000009" };
 
+/** Rendering contracts use a DOM-free mini scene; the repository sample itself also exercises Yoga groups. */
+function renderDocument(): ProjectDocument {
+  const document = parseProjectDocumentJson(sampleJson);
+  const scene = document.scenes[0]!;
+  const root = scene.nodes.find((node) => node.id === ids.root)!;
+  const image = scene.nodes.find((node) => node.id === ids.image)!;
+  const text = scene.nodes.find((node) => node.id === ids.text)!;
+  image.parentId = root.id;
+  text.parentId = root.id;
+  root.children = [image.id, text.id];
+  scene.nodes = [root, image, text];
+  return document;
+}
+
 /** Sample scene plus a button whose pressed state has its own image and whose hover/disabled states have none. */
 function documentWithButton(): ProjectDocument {
-  const document = parseProjectDocumentJson(sampleJson);
+  const document = renderDocument();
   const scene = document.scenes[0]!;
   const root = scene.nodes.find((node) => node.id === ids.root)!;
   document.assets.push({ id: buttonIds.pressedAsset, name: "Pressed", type: "image", source: { uri: "assets/pressed.png", mediaType: "image/png" } });
@@ -59,6 +75,7 @@ const NODE_TYPE_FIXTURES: Record<UINode["type"], (base: NodeBaseFields) => UINod
   input: (base) => ({ ...base, type: "input", placeholder: "Enter text", defaultValue: "", secure: false, align: "left", padding: { left: 0, right: 0, top: 0, bottom: 0 }, cleanOnFocus: false, clipText: true, textStyle: { fontFamily: "Arial", fontSize: 24, fontWeight: "normal", fontStyle: "normal", fill: "#FFFFFF", align: "left", verticalAlign: "top", wordWrap: false, breakWords: false, letterSpacing: 0 } }),
   slider: (base) => ({ ...base, type: "slider", backgroundAssetId: ids.asset, fillAssetId: ids.asset, handleAssetId: ids.asset, min: 0, max: 100, step: 1, defaultValue: 50, fillPadding: { left: 0, right: 0, top: 0, bottom: 0 } }),
   "progress-bar": (base) => ({ ...base, type: "progress-bar", backgroundAssetId: ids.asset, fillAssetId: ids.asset, defaultProgress: 50, fillPadding: { left: 0, right: 0, top: 0, bottom: 0 } }),
+  "particle-emitter": (base) => ({ ...base, type: "particle-emitter", effectId: "40000000-0000-4000-8000-00000000000f", autoplay: true, simulationSpace: "local", stopBehavior: "clear" }),
 };
 
 /** FancyButton keeps exactly one state view visible, so the shown texture identifies the active state. */
@@ -79,7 +96,7 @@ describe("sample project loader smoke test", () => {
     expect(atlas.pages.every((page) => page.texture !== null)).toBe(true);
   });
   it("resolves base transforms, partial desktop overrides, and profile visibility", () => {
-    const document = parseProjectDocumentJson(sampleJson);
+    const document = renderDocument();
     const node = document.scenes[0]!.nodes[1]!;
 
     expect(resolveProfileTransform(node, "desktop")).toEqual({ transform: node.transform, visible: true });
@@ -122,13 +139,13 @@ describe("sample project loader smoke test", () => {
   });
 
   it("uses supplied textures for image nodes and otherwise preserves the placeholder", () => {
-    const document = parseProjectDocumentJson(sampleJson);
+    const document = renderDocument();
     const textured = buildSceneView(document, ids.scene, "desktop", { interaction: "authoring", textures: new Map([[ids.asset, Texture.WHITE]]) });
     const imageView = textured.nodeViews.get(ids.image)!;
     const sprite = imageView.children[0];
     expect(imageView).not.toBeInstanceOf(Sprite);
     expect(sprite).toBeInstanceOf(Sprite);
-    expect(sprite?.width).toBe(320);
+    expect(sprite?.width).toBe(240);
 
     const placeholder = buildSceneView(document, ids.scene, "desktop", { interaction: "authoring" }).nodeViews.get(ids.image)?.children[0];
     expect(placeholder).not.toBeInstanceOf(Sprite);
@@ -142,7 +159,7 @@ describe("sample project loader smoke test", () => {
     expect(renderedRight).toBe(anchoredDocument.scenes[0]!.layout.referenceViewports.desktop.width);
 
     const mobileNode = anchoredDocument.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
-    mobileNode.layoutOverrides!.mobile!.transform = { ...mobileNode.layoutOverrides!.mobile!.transform, anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: 0 };
+    mobileNode.layoutOverrides = { mobile: { transform: { anchorMinX: 1, anchorMaxX: 1, pivotX: 1, x: 0 } } };
     const mobileView = buildSceneView(anchoredDocument, ids.scene, "mobile", { interaction: "authoring", textures: new Map([[ids.asset, Texture.WHITE]]) }).nodeViews.get(ids.image)!;
     const mobileSprite = mobileView.children[0] as Sprite;
     const mobileRight = mobileView.position.x + (mobileSprite.width - mobileView.pivot.x) * mobileView.scale.x;
@@ -150,7 +167,7 @@ describe("sample project loader smoke test", () => {
   });
 
   it("places a zero-offset centred pivot at the centre of its parent", () => {
-    const document = parseProjectDocumentJson(sampleJson);
+    const document = renderDocument();
     const imageNode = document.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
     imageNode.transform = {
       ...imageNode.transform,
@@ -170,27 +187,26 @@ describe("sample project loader smoke test", () => {
   });
 
   it("gives every node type the same grab rectangle, whatever it renders", () => {
-    const document = parseProjectDocumentJson(sampleJson);
-    const scene = document.scenes[0]!;
-    const root = scene.nodes.find((node) => node.id === ids.root)!;
     const types = Object.keys(NODE_TYPE_FIXTURES) as UINode["type"][];
     const nodeId = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
 
-    types.forEach((type, index) => {
-      scene.nodes.push(NODE_TYPE_FIXTURES[type]({
+    const views = types.map((type, index) => {
+      const node = NODE_TYPE_FIXTURES[type]({
         id: nodeId(index),
         name: type,
         parentId: ids.root,
         children: [],
         visible: true,
         transform: { x: 10, y: 20, width: 120, height: 40, scaleX: 1, scaleY: 1, rotation: 0 },
-      }));
-      root.children.push(nodeId(index));
+      });
+      // Input and ScrollBox create DOM controls; their NodeView-level grab contract is the same.
+      const view = node.type === "scroll-view" || node.type === "input" ? new ContainerNodeView() : createNodeView(node, "authoring");
+      view.update(node, "desktop", { width: 1920, height: 1080 });
+      return view;
     });
 
     // Ни текстур, ни Spine-данных: grab-зона не должна зависеть ни от контента ноды, ни от загруженных ассетов.
-    const { nodeViews } = buildSceneView(document, ids.scene, "desktop", { interaction: "authoring" });
-    const grab = (index: number, x: number, y: number) => (nodeViews.get(nodeId(index)) as NodeView | undefined)?.containsPoint({ x, y });
+    const grab = (index: number, x: number, y: number) => views[index]?.containsPoint({ x, y });
     const grabbedInsideRect = types.map((type, index) => [type, grab(index, 60, 20) ?? false] as const);
     const missedOutsideRect = types.map((type, index) => [type, grab(index, 200, 20) ?? true] as const);
 
@@ -199,7 +215,7 @@ describe("sample project loader smoke test", () => {
   });
 
   it("keeps a child grabbable where it reaches past its parent's rectangle", () => {
-    const document = parseProjectDocumentJson(sampleJson);
+    const document = renderDocument();
     const scene = document.scenes[0]!;
     const root = scene.nodes.find((node) => node.id === ids.root)!;
     const parentId = "50000000-0000-4000-8000-000000000001";
@@ -270,7 +286,7 @@ describe("sample project loader smoke test", () => {
   });
 
   it("applies identical layout coordinates to image, text, and Spine node containers", () => {
-    const document = parseProjectDocumentJson(sampleJson);
+    const document = renderDocument();
     const scene = document.scenes[0]!;
     const root = scene.nodes.find((node) => node.id === ids.root)!;
     const image = scene.nodes.find((node) => node.id === ids.image)!;
@@ -299,7 +315,7 @@ describe("sample project loader smoke test", () => {
     expect(scene.id).toBe(ids.scene);
     expect(scene.rootNodeIds).toEqual([ids.root]);
     expect(scene.nodes.find((node) => node.id === ids.image && node.type === "image")).toMatchObject({ assetId: ids.asset });
-    expect(scene.nodes.find((node) => node.id === ids.text)).toMatchObject({ binding: "welcomeLabel" });
+    expect(scene.nodes.find((node) => node.id === ids.text)).toMatchObject({ binding: "showcase.title" });
     expect(scene.layout.referenceViewports).toHaveProperty("desktop");
     expect(scene.layout.referenceViewports).toHaveProperty("mobile");
   });
@@ -310,19 +326,28 @@ describe("sample project loader smoke test", () => {
     const roundTripped = parseProjectDocumentJson(serialized);
     expect(roundTripped).toEqual(document);
     expect(serializeProjectDocument(roundTripped)).toBe(serialized);
-    expect(roundTripped.scenes[0]!.nodes[0]!.children).toEqual([ids.image, ids.text]);
+    expect(roundTripped.scenes[0]!.nodes[0]!.children).toEqual([
+      ids.text,
+      "10000000-0000-4000-8000-000000000020",
+      "10000000-0000-4000-8000-000000000030",
+      "10000000-0000-4000-8000-000000000040",
+      "10000000-0000-4000-8000-000000000050",
+      "10000000-0000-4000-8000-000000000062",
+      "10000000-0000-4000-8000-000000000063",
+    ]);
   });
 
   it("does not use display names as references", () => {
     const document = parseProjectDocumentJson(sampleJson);
     const renamed = clone(document);
-    renamed.scenes[0]!.nodes[1]!.name = "Renamed Logo";
-    expect(parseProjectDocumentJson(serializeProjectDocument(renamed)).scenes[0]!.nodes[1]).toMatchObject({ id: ids.image, assetId: ids.asset });
+    const image = renamed.scenes[0]!.nodes.find((node) => node.id === ids.image)!;
+    image.name = "Renamed image";
+    expect(parseProjectDocumentJson(serializeProjectDocument(renamed)).scenes[0]!.nodes.find((node) => node.id === ids.image)).toMatchObject({ id: ids.image, assetId: ids.asset });
   });
 
   it("surfaces schema validation codes through the JSON loading boundary", () => {
     const invalid = clone(parseProjectDocumentJson(sampleJson));
-    (invalid.scenes[0]!.nodes[1] as { assetId: string }).assetId = ids.text;
+    (invalid.scenes[0]!.nodes.find((node) => node.id === ids.image)! as { assetId: string }).assetId = ids.text;
     expect(() => parseProjectDocumentJson(JSON.stringify(invalid))).toThrow("MISSING_ASSET_REFERENCE");
   });
 

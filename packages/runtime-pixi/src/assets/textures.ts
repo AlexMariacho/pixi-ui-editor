@@ -1,4 +1,4 @@
-import { type Asset, type ProjectDocument } from "@pixi-ui-editor/schema";
+import { collectEffectAssetIds, type Asset, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { Spritesheet, Texture, type SpritesheetData } from "pixi.js";
 import { collectRenderedNodes } from "../scene.js";
 import { collectNodeAssetIds } from "../views/createNodeView.js";
@@ -60,7 +60,8 @@ export async function loadSceneTextures(
   const textures = new Map<string, Texture>();
 
   for (const node of collectRenderedNodes(document, scene)) {
-    for (const assetId of collectNodeAssetIds(node)) {
+    const effect = node.type === "particle-emitter" ? document.effects.find((candidate) => candidate.id === node.effectId) : undefined;
+    for (const assetId of [...collectNodeAssetIds(node), ...(effect === undefined ? [] : collectEffectAssetIds(effect))]) {
       if (textures.has(assetId)) continue;
 
       const asset = assetsById.get(assetId);

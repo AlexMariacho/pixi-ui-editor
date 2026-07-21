@@ -1,9 +1,9 @@
 import type { StoreApi } from "zustand";
-import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, PrefabDefinition, ProgressBarNode, ProjectDocument, Scene, ScrollViewSettings, SliderNode, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
+import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, ParticleEffectDefinition, PrefabDefinition, ProgressBarNode, ProjectDocument, Scene, ScrollViewSettings, SliderNode, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
-export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "scroll-view" | "image" | "text" | "spine" | "button" | "input" | "slider" | "progress-bar";
+export type AddableNodeType = "container" | "horizontal-layout" | "vertical-layout" | "grid-layout" | "scroll-view" | "image" | "text" | "spine" | "button" | "input" | "slider" | "progress-bar" | "particle-emitter";
 export type InputPatch = Partial<Pick<InputNode, "backgroundAssetId" | "placeholder" | "defaultValue" | "maxLength" | "secure" | "align" | "padding" | "cleanOnFocus" | "clipText" | "textStyle">>;
 export type SliderPatch = Partial<Pick<SliderNode, "backgroundAssetId" | "fillAssetId" | "handleAssetId" | "min" | "max" | "step" | "defaultValue" | "fillPadding" | "showValue" | "valueTextStyle">>;
 export type ProgressBarPatch = Partial<Pick<ProgressBarNode, "backgroundAssetId" | "fillAssetId" | "defaultProgress" | "fillPadding">>;
@@ -25,6 +25,8 @@ export type EditorState = {
   /** Transient control values shown only on the inert authoring canvas. */
   sliderPreviewValues: Record<string, number>;
   progressBarPreviewValues: Record<string, number>;
+  particlePlayback: Record<string, "play" | "pause" | "restart" | "step">;
+  particleDiagnostics: Record<string, { active: number; free: number; dropped: number; playing: boolean }>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -68,6 +70,15 @@ export type EditorState = {
   setButtonEnabled(nodeId: string, enabled: boolean): void;
   setButtonSounds(nodeId: string, sounds: Extract<UINode, { type: "button" }>["sounds"]): void;
   previewButtonState(nodeId: string, state: ButtonStateKey): void;
+  createParticleEffect(name?: string): string | null;
+  assignParticleEffect(nodeId: string, effectId: string): void;
+  updateParticleEffect(effectId: string, patch: Partial<ParticleEffectDefinition>): void;
+  updateParticleEmitter(nodeId: string, patch: Partial<Extract<UINode, { type: "particle-emitter" }>>): void;
+  duplicateParticleEffect(nodeId: string): void;
+  renameParticleEffect(effectId: string, name: string): void;
+  deleteParticleEffect(effectId: string): void;
+  controlParticlePlayback(nodeId: string, action: "play" | "pause" | "restart" | "step"): void;
+  reportParticleDiagnostics(nodeId: string, diagnostics: { active: number; free: number; dropped: number; playing: boolean }): void;
   addNode(type: AddableNodeType): void;
   addNodeFromAsset(assetId: string, position: { x: number; y: number }): void;
   moveNode(nodeId: string, placement: { parentId: string | null; index: number }): void;

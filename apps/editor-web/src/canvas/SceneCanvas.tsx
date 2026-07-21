@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { buildSceneView, collectNodeAssetIds, collectRenderedNodes, getSpineViewPlayback, NodeView, previewNodeView, resolveAnchoredTransform, resolveProfileTransform, setButtonViewState, setProgressBarViewProgress, setSliderViewValue, setSpineViewAutoplay, setSpineViewFrame, updateNodeView, updateParticleEmitters, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { isPositionManagingContainer, type ButtonStateKey, type LayoutProfileId, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import { Application, Container, Graphics, Text as PixiText, type FederatedPointerEvent, type Texture } from "pixi.js";
 import { getEditingTarget, getSceneRoot, resolveAssetReference, useEditorStore, type AddableNodeType, type EditorTool, type ViewMode } from "../store/index.js";
@@ -764,13 +764,44 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
     for (const node of scene.nodes) {
       const view = nodeViewsRef.current.get(node.id);
       if (view === undefined || view.destroyed) continue;
-      updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId));
+      updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId), node.type === "particle-emitter" ? document.effects.find((effect) => effect.id === node.effectId) : undefined);
       const playback = useEditorStore.getState();
       if (node.type === "slider") setSliderViewValue(view, playback.sliderPreviewValues[node.id] ?? node.defaultValue);
       if (node.type === "progress-bar") setProgressBarViewProgress(view, playback.progressBarPreviewValues[node.id] ?? node.defaultProgress);
     }
     redrawSelectionRef.current();
   }, [activeProfile, application, document, sceneId, viewMode]);
+
+  // The authoring simulation shares this application's ticker; no React interval or shared ticker.
+  useEffect(() => {
+    if (application === null || viewMode !== "single") return;
+    let lastReport = 0;
+    const tick = () => {
+      const root = sceneRootRef.current;
+      if (root === null) return;
+      const state = useEditorStore.getState();
+      for (const [id, action] of Object.entries(state.particlePlayback)) {
+        const view = nodeViewsRef.current.get(id) as (Container & { play?(): void; pause?(): void; restart?(): void; updateParticles?(delta: number): void }) | undefined;
+        if (action === "play") view?.play?.();
+        else if (action === "pause") view?.pause?.();
+        else if (action === "restart") view?.restart?.();
+        else view?.updateParticles?.(1 / 60);
+      }
+      if (Object.keys(state.particlePlayback).length > 0) useEditorStore.setState({ particlePlayback: {} });
+      updateParticleEmitters(root, application.ticker.deltaMS / 1000);
+      if (performance.now() - lastReport < 150) return;
+      lastReport = performance.now();
+      const scene = documentRef.current.scenes.find((item) => item.id === sceneId);
+      for (const [id, view] of nodeViewsRef.current) {
+        const diagnostics = (view as Container & { getDiagnostics?(): { active: number; dropped: number; playing: boolean } }).getDiagnostics?.();
+        const node = scene?.nodes.find((item) => item.id === id);
+        const effect = node?.type === "particle-emitter" ? documentRef.current.effects.find((item) => item.id === node.effectId) : undefined;
+        if (diagnostics !== undefined && effect?.type === "particles") state.reportParticleDiagnostics(id, { ...diagnostics, free: Math.max(0, effect.maxParticles - diagnostics.active) });
+      }
+    };
+    application.ticker.add(tick);
+    return () => { application.ticker.remove(tick); };
+  }, [application, sceneId, viewMode]);
 
   // An asset newly assigned to any rendered node may not have been loaded yet. Add it to the
   // existing map and synchronize stable views in place instead of rebuilding the scene.
@@ -791,7 +822,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
       for (const node of scene.nodes) {
         const view = nodeViewsRef.current.get(node.id);
         if (view !== undefined && !view.destroyed) {
-          updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId));
+          updateNodeView(view, node, activeProfile, getParentLayoutSize(scene, node, activeProfile), node.parentId === null ? undefined : nodesById.get(node.parentId), node.type === "particle-emitter" ? document.effects.find((effect) => effect.id === node.effectId) : undefined);
         }
       }
     }).catch((error: unknown) => {
@@ -920,6 +951,7 @@ export function SceneCanvas({ document, sceneId, activeProfile, activeTool, view
                 { type: "image", label: "Image" },
                 { type: "text", label: "Text" },
                 { type: "spine", label: "Spine", disabled: !document.assets.some((asset) => asset.type === "spine") },
+                { type: "particle-emitter", label: "Particle Emitter", disabled: !document.assets.some((asset) => asset.type === "image") },
               ],
             },
           ]}
