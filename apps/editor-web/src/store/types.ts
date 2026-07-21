@@ -36,7 +36,7 @@ export type EditorState = {
   setSceneAudio(sceneId: string, audio: Scene["audio"]): void;
   deleteScene(sceneId: string): void;
   updateReferenceViewport(profile: LayoutProfileId, viewport: { width: number; height: number }): void;
-  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string; style?: TextStyleDefinition }): void;
+  updateNode(nodeId: string, patch: Partial<Pick<UINode, "name" | "visible">> & { text?: string; style?: TextStyleDefinition; opacity?: number }): void;
   updateNodeProfileTransform(nodeId: string, patch: Partial<UINode["transform"]>): void;
   updateNodeProfileTransforms(updates: { nodeId: string; patch: Partial<UINode["transform"]> }[]): void;
   updateLayoutGroup(nodeId: string, patch: Partial<LinearLayoutSettings | GridLayoutSettings>): void;

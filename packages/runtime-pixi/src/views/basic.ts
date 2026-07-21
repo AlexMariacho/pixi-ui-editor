@@ -50,6 +50,7 @@ export class ImageNodeView extends NodeView {
     if (this.content instanceof Sprite && texture !== undefined && this.content.texture !== texture) this.content.texture = texture;
     if (this.content instanceof Sprite) this.content.setSize(transform.width, transform.height);
     else if (this.content instanceof Graphics) this.content.clear().rect(0, 0, transform.width, transform.height).fill(0x4a5568).stroke({ width: 1, color: 0x94a3b8 });
+    if (this.content !== undefined) this.content.alpha = node.type === "image" ? node.opacity ?? 1 : 1;
   }
 }
 

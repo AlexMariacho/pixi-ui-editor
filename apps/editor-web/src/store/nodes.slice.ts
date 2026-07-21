@@ -69,6 +69,7 @@ export const createNodesSlice: EditorSlice<Keys> = (set) => ({
     if (patch.visible !== undefined) node.visible = patch.visible;
     if (patch.text !== undefined && node.type === "text") node.text = patch.text;
     if (patch.style !== undefined && node.type === "text") node.style = patch.style;
+    if (patch.opacity !== undefined && node.type === "image") node.opacity = patch.opacity;
 
     return commitCandidate(state, candidate, "Node update was rejected because it makes the project document invalid.");
   }),
