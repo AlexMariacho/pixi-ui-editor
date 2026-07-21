@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import type { Asset, AssetFile } from "@pixi-ui-editor/schema";
 import { Application } from "pixi.js";
-import { collectNodeAssetIds, createSpineView, loadSpineAsset, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
-import { clearEditorSpineCache, getCachedAtlasJson, loadEditorAtlasJson, resolveAssetUrl, resolveFileUrl } from "../../shared/assets.js";
+import { collectNodeAssetIds, createSpineView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
+import { clearEditorSpineCache, getCachedAtlasJson, loadEditorAtlasJson, loadEditorSpineAsset, resolveAssetUrl } from "../../shared/assets.js";
 import { useEditorStore, type AtlasAsset } from "../../store/index.js";
 import { ASSETS_WINDOW_MIN_SIZE, useUiPrefsStore } from "../../shared/uiPrefs.js";
 import { FloatingWindow } from "../../shared/FloatingWindow.js";
@@ -34,6 +34,18 @@ function AssetPreview({ asset }: { asset: Asset }) {
   if (asset.type === "sound") return <div className="asset-preview asset-preview-fallback asset-preview-sound" />;
   const url = resolveAssetUrl(asset);
   return <div className={`asset-preview${failed || url === undefined ? " asset-preview-fallback" : ""}`}>{url !== undefined && !failed && <img src={url} alt="" onError={() => setFailed(true)} />}</div>;
+}
+
+/** Warns inline when a Spine asset fails to load (e.g. an incompatible export format), showing the reason on hover. */
+function SpineAssetWarning({ asset }: { asset: Extract<Asset, { type: "spine" }> }) {
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    void loadEditorSpineAsset(asset).then(() => { if (!cancelled) setError(undefined); }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
+    return () => { cancelled = true; };
+  }, [asset]);
+  if (error === undefined) return null;
+  return <span className="asset-warning-icon" role="img" aria-label={`Problem loading '${asset.name}': ${error}`} title={error}>!</span>;
 }
 
 function SoundPreview({ asset }: { asset: Extract<Asset, { type: "sound" }> }) {
@@ -104,7 +116,7 @@ function SpinePreview({ asset }: { asset: Extract<Asset, { type: "spine" }> }) {
   const frameRate = data?.fps && data.fps > 0 ? data.fps : 60;
   const totalFrames = Math.max(1, Math.round(playbackTime.duration * frameRate));
   const currentFrame = Math.min(totalFrames - 1, Math.floor(playbackTime.current * frameRate)) + 1;
-  useEffect(() => { let cancelled = false; void loadSpineAsset(asset, resolveFileUrl).then((loaded) => { if (!cancelled) { setData(loaded); setAnimation(loaded.animations[0]?.name || ""); } }).catch((error) => console.warn(`Unable to preview Spine asset '${asset.id}'.`, error)); return () => { cancelled = true; }; }, [asset]);
+  useEffect(() => { let cancelled = false; void loadEditorSpineAsset(asset).then((loaded) => { if (!cancelled) { setData(loaded); setAnimation(loaded.animations[0]?.name || ""); } }).catch((error) => console.warn(`Unable to preview Spine asset '${asset.name}' (${asset.id}).`, error)); return () => { cancelled = true; }; }, [asset]);
   useEffect(() => {
     if (hostRef.current === null || data === undefined) return;
     const app = new Application(); let cancelled = false; let initialized = false; let destroyed = false; let spine: ReturnType<typeof createSpineView> | undefined; let reportPlayback: (() => void) | undefined;
@@ -298,7 +310,7 @@ export function AssetPanel() {
     const content = <>
       {isAtlas && <button type="button" className="atlas-expand-toggle" aria-label={expanded ? `Collapse ${asset.name}` : `Expand ${asset.name}`} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); toggleAtlasExpanded(asset.id); }}>{expanded ? "▾" : "▸"}</button>}
       {viewMode !== "compact" && <AssetPreview asset={asset} />}
-      <div className="asset-details"><span className="asset-name" title={asset.name}>{asset.name}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
+      <div className="asset-details"><span className="asset-name-line"><span className="asset-name" title={asset.name}>{asset.name}</span>{asset.type === "spine" && <SpineAssetWarning asset={asset} />}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
       {viewMode === "list" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
       {viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
       <div className="asset-actions"><button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button></div>

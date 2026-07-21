@@ -649,7 +649,25 @@ body { margin: 0; }
 
 .asset-details { display: grid; min-width: 0; align-content: center; gap: 2px; }
 
-.asset-name { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.asset-name-line { display: flex; min-width: 0; align-items: center; gap: 4px; }
+
+.asset-name { overflow: hidden; flex: 1; min-width: 0; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+
+.asset-warning-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  color: #1a1a1a;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  background: #e0a000;
+  border-radius: 50%;
+  cursor: help;
+}
 
 .asset-type { color: var(--text-muted); font-size: 11px; }
 

@@ -4,6 +4,17 @@ import { Texture, type Ticker } from "pixi.js";
 import { collectRenderedNodes } from "../scene.js";
 import { loadTexture, type FileUrlResolver } from "./textures.js";
 
+/** Matches spine-pixi-v8's "unknown timeline/attachment/constraint type" errors, thrown when a skeleton was exported by an incompatible Spine Editor version (e.g. pre-4.0 JSON, which names slot color timelines "color"/"twoColor" instead of the 4.x "rgba"/"rgba2"). */
+const INCOMPATIBLE_SKELETON_FORMAT_PATTERN = /Invalid (?:timeline|attachment|constraint) type/;
+
+function describeSkeletonParseError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (INCOMPATIBLE_SKELETON_FORMAT_PATTERN.test(message)) {
+    return `Unsupported Spine export format (${message}). The skeleton was likely exported by a Spine Editor version incompatible with this runtime (spine-pixi-v8, Spine 4.x JSON). Re-export it from Spine Editor 4.1+.`;
+  }
+  return `Failed to parse skeleton data: ${message}`;
+}
+
 /** Assigns atlas pages by their exported image filename, never by their array index. */
 export function assignAtlasPageTextures(atlas: TextureAtlas, textures: ReadonlyMap<string, Texture>): void {
   for (const page of atlas.pages) {
@@ -38,7 +49,7 @@ export async function loadSceneSpines(
     if (asset?.type !== "spine") continue;
 
     try { spines.set(asset.id, await loadSpineAsset(asset, resolveFileUrl, cache)); } catch (error) {
-      console.warn(`Unable to load Spine asset '${asset.id}'.`, error);
+      console.warn(`Unable to load Spine asset '${asset.name}' (${asset.id}).`, error);
     }
   }
   return spines;
@@ -60,7 +71,14 @@ export async function loadSpineAsset(asset: Extract<Asset, { type: "spine" }>, r
   }
   const atlas = new TextureAtlas(atlasText);
   assignAtlasPageTextures(atlas, textures);
-  const skeletonData = new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(skeletonText);
+  let skeletonData: SkeletonData;
+  try {
+    skeletonData = new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(skeletonText);
+  } catch (error) {
+    const description = describeSkeletonParseError(error);
+    console.error(`Spine asset '${asset.name}' (${asset.id}) could not be parsed: ${description}`);
+    throw new Error(description, { cause: error });
+  }
   cache.set(asset.files.skeleton.uri, skeletonData);
   return skeletonData;
 }

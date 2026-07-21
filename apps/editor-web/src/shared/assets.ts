@@ -110,10 +110,15 @@ export function getCachedSpineAssetSize(asset: Asset): { width: number; height: 
   return { width: skeleton.width, height: skeleton.height };
 }
 
+/** Loads (and caches) the full Spine skeleton data for an asset, e.g. for preview playback or validity checks. */
+export function loadEditorSpineAsset(asset: Extract<Asset, { type: "spine" }>): Promise<SkeletonData> {
+  return loadSpineAsset(asset, resolveFileUrl, spineCache);
+}
+
 /** Ensures a dropped Spine asset uses the bounds exported with its skeleton data. */
 export async function loadEditorSpineAssetSize(asset: Asset): Promise<{ width: number; height: number } | undefined> {
   if (asset.type !== "spine") return undefined;
-  await loadSpineAsset(asset, resolveFileUrl, spineCache);
+  await loadEditorSpineAsset(asset);
   return getCachedSpineAssetSize(asset);
 }
 
