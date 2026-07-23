@@ -1,5 +1,6 @@
 import { getEditingTarget, useEditorStore, type EditorState } from "../store/index.js";
 import { bindEditorCommands } from "./editorCommandBindings.js";
+import { isFileSystemAccessSupported } from "./projectFolder/index.js";
 
 export const EDITOR_COMMAND_IDS = {
   panTool: "tool.pan",
@@ -10,6 +11,10 @@ export const EDITOR_COMMAND_IDS = {
   deleteNode: "selection.delete-node",
   undo: "history.undo",
   redo: "history.redo",
+  projectNew: "project.new",
+  projectSave: "project.save",
+  projectSaveAs: "project.saveAs",
+  projectOpen: "project.open",
 } as const;
 
 export type EditorCommandId = typeof EDITOR_COMMAND_IDS[keyof typeof EDITOR_COMMAND_IDS];
@@ -48,6 +53,10 @@ export const DEFAULT_EDITOR_KEY_BINDINGS: EditorKeyBindings = {
     { key: "y", code: "KeyY", label: "Ctrl+Y", ctrl: true, shift: false },
     { key: "z", code: "KeyZ", label: "Ctrl+Shift+Z", ctrl: true, shift: true },
   ],
+  [EDITOR_COMMAND_IDS.projectNew]: [],
+  [EDITOR_COMMAND_IDS.projectSave]: [{ key: "s", code: "KeyS", label: "Ctrl+S", ctrl: true, shift: false }],
+  [EDITOR_COMMAND_IDS.projectSaveAs]: [],
+  [EDITOR_COMMAND_IDS.projectOpen]: [],
 };
 
 const commands: Readonly<Record<EditorCommandId, EditorCommand>> = {
@@ -79,7 +88,33 @@ const commands: Readonly<Record<EditorCommandId, EditorCommand>> = {
     title: "Redo",
     canExecute: (state) => state.redoStack.length > 0,
   },
+  [EDITOR_COMMAND_IDS.projectNew]: {
+    id: EDITOR_COMMAND_IDS.projectNew,
+    title: "New Project",
+    // Unlike Save/Save As/Open, New never touches disk, so it works without the File System Access API.
+    canExecute: (state) => !state.folderBusy,
+  },
+  [EDITOR_COMMAND_IDS.projectSave]: {
+    id: EDITOR_COMMAND_IDS.projectSave,
+    title: "Save",
+    canExecute: canUseProjectFolderCommands,
+  },
+  [EDITOR_COMMAND_IDS.projectSaveAs]: {
+    id: EDITOR_COMMAND_IDS.projectSaveAs,
+    title: "Save As",
+    canExecute: canUseProjectFolderCommands,
+  },
+  [EDITOR_COMMAND_IDS.projectOpen]: {
+    id: EDITOR_COMMAND_IDS.projectOpen,
+    title: "Open",
+    canExecute: canUseProjectFolderCommands,
+  },
 };
+
+/** Save/Save As/Open need the File System Access API and no other folder operation already in flight. */
+function canUseProjectFolderCommands(state: EditorState): boolean {
+  return isFileSystemAccessSupported() && !state.folderBusy;
+}
 
 function toolCommand(id: EditorCommandId, title: string, tool: EditorState["activeTool"]): EditorCommand {
   return {

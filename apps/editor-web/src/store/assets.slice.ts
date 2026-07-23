@@ -3,32 +3,32 @@ import { commitCandidate, getEditingTarget } from "./helpers.js";
 import type { EditorSlice } from "./types.js";
 type Keys = "addImageAsset" | "addFontAsset" | "addSpineAsset" | "addAtlasAsset" | "addSoundAsset" | "setImageNodeAsset" | "replaceAssetSource" | "replaceSpineAssetFiles" | "deleteAsset";
 export const createAssetsSlice: EditorSlice<Keys> = (set) => ({
-  addImageAsset: (name, source) => set((state) => {
+  addImageAsset: (name, source, id) => set((state) => {
     const candidate = structuredClone(state.document);
-    candidate.assets.push({ id: createStableId(), name, type: "image", source: { ...source } });
+    candidate.assets.push({ id: id ?? createStableId(), name, type: "image", source: { ...source } });
 
     return commitCandidate(state, candidate, "Image asset creation was rejected because it makes the project document invalid.");
   }),
-  addFontAsset: (name, family, weight, style, source) => set((state) => {
+  addFontAsset: (name, family, weight, style, source, id) => set((state) => {
     const candidate = structuredClone(state.document);
-    candidate.assets.push({ id: createStableId(), name, type: "font", family, weight, style, source: { ...source } });
+    candidate.assets.push({ id: id ?? createStableId(), name, type: "font", family, weight, style, source: { ...source } });
     return commitCandidate(state, candidate, "Font asset creation was rejected because it makes the project document invalid.");
   }),
-  addSpineAsset: (name, files) => set((state) => {
+  addSpineAsset: (name, files, id) => set((state) => {
     const candidate = structuredClone(state.document);
-    candidate.assets.push({ id: createStableId(), name, type: "spine", files: structuredClone(files) });
+    candidate.assets.push({ id: id ?? createStableId(), name, type: "spine", files: structuredClone(files) });
     return commitCandidate(state, candidate, "Spine asset creation was rejected because it makes the project document invalid.");
   }),
-  addAtlasAsset: (name, files, frameNames) => set((state) => {
+  addAtlasAsset: (name, files, frameNames, id) => set((state) => {
     const candidate = structuredClone(state.document);
     const frames: Record<string, string> = {};
     for (const frameName of frameNames) frames[frameName] = createStableId();
-    candidate.assets.push({ id: createStableId(), name, type: "atlas", files: structuredClone(files), frames });
+    candidate.assets.push({ id: id ?? createStableId(), name, type: "atlas", files: structuredClone(files), frames });
     return commitCandidate(state, candidate, "Atlas asset creation was rejected because it makes the project document invalid.");
   }),
-  addSoundAsset: (name, source) => set((state) => {
+  addSoundAsset: (name, source, id) => set((state) => {
     const candidate = structuredClone(state.document);
-    candidate.assets.push({ id: createStableId(), name, type: "sound", source: { ...source } });
+    candidate.assets.push({ id: id ?? createStableId(), name, type: "sound", source: { ...source } });
 
     return commitCandidate(state, candidate, "Sound asset creation was rejected because it makes the project document invalid.");
   }),

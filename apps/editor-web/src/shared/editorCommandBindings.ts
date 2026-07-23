@@ -1,5 +1,6 @@
 import type { EditorState } from "../store/index.js";
 import { bindHistoryCommands } from "../store/history.slice.js";
+import { bindProjectFolderCommands } from "../store/workspace.slice.js";
 import { EDITOR_COMMAND_IDS, type EditorCommandRegistry } from "./editorCommands.js";
 
 /** Wires editor services to semantic commands. The registry itself has no action callbacks. */
@@ -21,4 +22,5 @@ export function bindEditorCommands(registry: EditorCommandRegistry, getState: ()
     if (state.selectedNodeId !== null) state.deleteNode(state.selectedNodeId);
   });
   bindHistoryCommands(registry, getState);
+  bindProjectFolderCommands(registry, getState);
 }

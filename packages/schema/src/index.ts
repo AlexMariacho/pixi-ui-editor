@@ -281,3 +281,6 @@ function canonicalizeJson(value: unknown): unknown {
   return value;
 }
 export function serializeProjectDocument(document: ProjectDocument): string { assertProjectDocument(document); return `${JSON.stringify(canonicalizeJson(document))}\n`; }
+
+export * from "./assetPaths.js";
+export * from "./manifest.js";

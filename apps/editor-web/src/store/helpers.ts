@@ -1,5 +1,5 @@
 import { loadProjectDocument, parseProjectDocumentJson, resolveAnchoredTransform, resolveProfileTransform, type LayoutSize } from "@pixi-ui-editor/runtime-pixi";
-import { createStableId, validateProjectDocument, type Asset, type LayoutProfileId, type PrefabDefinition, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
+import { CURRENT_SCHEMA_VERSION, createStableId, validateProjectDocument, type Asset, type LayoutProfileId, type PrefabDefinition, type ProjectDocument, type Scene, type UINode } from "@pixi-ui-editor/schema";
 import sampleJson from "../../../../examples/sample-project/project.json";
 import { DOCUMENT_STORAGE_KEY, type AnchorRect, type EditingTarget, type EditorState } from "./types.js";
 import { recordHistoryCommit } from "./history.slice.js";
@@ -54,6 +54,36 @@ export function createSceneRoot(scene: Pick<Scene, "layout">): UINode {
     visible: true,
     transform: { x: 0, y: 0, width: desktop.width, height: desktop.height, scaleX: 1, scaleY: 1, rotation: 0 },
     layoutOverrides: { mobile: { transform: { width: mobile.width, height: mobile.height } } },
+  };
+}
+
+/** New Project's default screen size: matches the bundled sample's own reference viewports, a reasonable starting point. */
+export const DEFAULT_REFERENCE_VIEWPORTS: Record<LayoutProfileId, { width: number; height: number }> = {
+  desktop: { width: 1920, height: 1080 },
+  mobile: { width: 390, height: 844 },
+};
+
+/** Builds a from-scratch project document for New Project: one window (scene) with an empty root container. */
+export function createEmptyProjectDocument(name: string): ProjectDocument {
+  const scene: Scene = {
+    id: createStableId(),
+    name: "Main",
+    rootNodeIds: [],
+    nodes: [],
+    layout: { referenceViewports: structuredClone(DEFAULT_REFERENCE_VIEWPORTS) },
+  };
+  const root = createSceneRoot(scene);
+  scene.rootNodeIds.push(root.id);
+  scene.nodes.push(root);
+
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    project: { id: createStableId(), name },
+    settings: { layoutProfileSelection: { mode: "aspect-ratio", mobileMaxAspectRatio: 1 } },
+    assets: [],
+    effects: [],
+    prefabs: [],
+    scenes: [scene],
   };
 }
 

@@ -1,7 +1,19 @@
 {
   "name": "@pixi-ui-editor/runtime-pixi",
-  "version": "0.0.0",
+  "version": "0.1.1",
+  "description": "PixiJS runtime that renders Pixi UI Editor scene documents in a game.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexMariacho/pixi-ui-editor.git",
+    "directory": "packages/runtime-pixi"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

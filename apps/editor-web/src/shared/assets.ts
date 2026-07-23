@@ -2,6 +2,7 @@ import { collectNodeAssetIds, loadSceneFonts, loadSceneSpines, loadSceneTextures
 import { collectEffectAssetIds, type Asset, type EffectDefinition, type ProjectDocument, type UINode } from "@pixi-ui-editor/schema";
 import type { Spritesheet, SpritesheetData, Texture } from "pixi.js";
 import { resolveAssetReference, type AtlasAsset } from "../store/helpers.js";
+import { lookupAssetUrl } from "./assetUrlRegistry.js";
 import buttonDisabledUrl from "../../../../examples/sample-project/assets/button-disabled.svg";
 import buttonHoverUrl from "../../../../examples/sample-project/assets/button-hover.svg";
 import buttonNormalUrl from "../../../../examples/sample-project/assets/button-normal.svg";
@@ -27,14 +28,16 @@ const spineCache = new Map<string, SkeletonData>();
 const atlasSpritesheetCache = new Map<string, Spritesheet>();
 const atlasJsonCache = new Map<string, SpritesheetData>();
 
+// Resolution order: an inline data URI as-is, then a blob URL the editor registered for a working-copy asset
+// path (`shared/assetUrlRegistry.ts`, filled at working-copy load time and on add/replace), then the bundled
+// sample project's own static asset URLs as the last fallback.
+export const resolveFileUrl: FileUrlResolver = (uri) => uri.startsWith("data:") ? uri : (lookupAssetUrl(uri) ?? SAMPLE_ASSET_URLS[uri]);
+
 export const resolveAssetUrl: AssetUrlResolver = (asset: Asset): string | undefined => {
   if (asset.type === "atlas") return resolveFileUrl(asset.files.texture.uri);
   if (asset.type !== "image" && asset.type !== "sound") return undefined;
-  if (asset.source.uri.startsWith("data:")) return asset.source.uri;
-  return SAMPLE_ASSET_URLS[asset.source.uri];
+  return resolveFileUrl(asset.source.uri);
 };
-
-export const resolveFileUrl: FileUrlResolver = (uri) => uri.startsWith("data:") ? uri : SAMPLE_ASSET_URLS[uri];
 
 export function loadEditorSceneTextures(document: ProjectDocument, sceneId: string) {
   return loadSceneTextures(document, sceneId, resolveAssetUrl, resolveFileUrl, textureCache, atlasSpritesheetCache);

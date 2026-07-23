@@ -1,37 +1,9 @@
 import type { FileUrlResolver } from "@pixi-ui-editor/runtime-pixi";
-import { serializeProjectDocument, type Asset, type ProjectDocument } from "@pixi-ui-editor/schema";
+import { assetFilePath, fontFileName, imageFileName, sanitizeName, serializeProjectDocument, soundFileName, type ProjectDocument } from "@pixi-ui-editor/schema";
 import { strToU8, zipSync } from "fflate";
 
 export type ExportFileEntry = { path: string; url: string };
 export type ExportEntries = { document: ProjectDocument; files: ExportFileEntry[] };
-
-const sanitizeName = (name: string) => {
-  const safe = name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "");
-  return safe === "" ? "file" : safe;
-};
-
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp",
-  "image/gif": ".gif",
-  "image/svg+xml": ".svg",
-  "image/avif": ".avif",
-};
-
-const SOUND_EXTENSIONS: Record<string, string> = {
-  "audio/wav": ".wav",
-  "audio/mpeg": ".mp3",
-  "audio/ogg": ".ogg",
-  "audio/aac": ".aac",
-  "audio/mp4": ".m4a",
-};
-
-/** Image assets have no file name, so the exported name is the asset name plus a mediaType extension. */
-function imageFileName(asset: Extract<Asset, { type: "image" }>): string {
-  const extension = IMAGE_EXTENSIONS[asset.source.mediaType] ?? `.${sanitizeName(asset.source.mediaType.split("/")[1] ?? "bin")}`;
-  return `${sanitizeName(asset.name)}${extension}`;
-}
 
 /** Rewrites every asset file URI to a package-relative `assets/<assetId>/<fileName>` path and lists the files to bundle. */
 export function buildExportEntries(projectDocument: ProjectDocument, resolveFileUrl: FileUrlResolver): ExportEntries {
@@ -41,7 +13,7 @@ export function buildExportEntries(projectDocument: ProjectDocument, resolveFile
   const addFile = (assetId: string, fileName: string, uri: string): string => {
     const url = resolveFileUrl(uri);
     if (url === undefined) throw new Error(`Unable to resolve a URL for asset file '${fileName}' of asset '${assetId}'.`);
-    const path = `assets/${assetId}/${fileName}`;
+    const path = assetFilePath(assetId, fileName);
     files.push({ path, url });
     return path;
   };
@@ -50,11 +22,9 @@ export function buildExportEntries(projectDocument: ProjectDocument, resolveFile
     if (asset.type === "image") {
       asset.source.uri = addFile(asset.id, imageFileName(asset), asset.source.uri);
     } else if (asset.type === "font") {
-      const extension = asset.source.mediaType.split("/")[1] ?? "font";
-      asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}.${sanitizeName(extension)}`, asset.source.uri);
+      asset.source.uri = addFile(asset.id, fontFileName(asset), asset.source.uri);
     } else if (asset.type === "sound") {
-      const extension = SOUND_EXTENSIONS[asset.source.mediaType] ?? `.${sanitizeName(asset.source.mediaType.split("/")[1] ?? "bin")}`;
-      asset.source.uri = addFile(asset.id, `${sanitizeName(asset.name)}${extension}`, asset.source.uri);
+      asset.source.uri = addFile(asset.id, soundFileName(asset), asset.source.uri);
     } else if (asset.type === "atlas") {
       asset.files.json.uri = addFile(asset.id, asset.files.json.name, asset.files.json.uri);
       asset.files.texture.uri = addFile(asset.id, asset.files.texture.name, asset.files.texture.uri);

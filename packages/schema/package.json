@@ -1,7 +1,19 @@
 {
   "name": "@pixi-ui-editor/schema",
-  "version": "0.0.0",
+  "version": "0.1.1",
+  "description": "Versioned document schema, validation and project-manifest format for Pixi UI Editor projects.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexMariacho/pixi-ui-editor.git",
+    "directory": "packages/schema"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

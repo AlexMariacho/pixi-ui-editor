@@ -1,5 +1,5 @@
 import type { StoreApi } from "zustand";
-import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, ParticleEffectDefinition, PrefabDefinition, ProgressBarNode, ProjectDocument, Scene, ScrollViewSettings, SliderNode, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
+import type { AssetFile, ButtonStateKey, GridLayoutSettings, InputNode, LayoutGroupNode, LayoutItemDefinition, LayoutProfileId, LinearLayoutSettings, ParticleEffectDefinition, PrefabDefinition, ProgressBarNode, ProjectDocument, ProjectManifest, Scene, ScrollViewSettings, SliderNode, TextStyleDefinition, UINode } from "@pixi-ui-editor/schema";
 export const DOCUMENT_STORAGE_KEY = "pixi-ui-editor:document";
 export type EditorTool = "pan" | "select" | "resize";
 export type ViewMode = "single" | "map";
@@ -37,6 +37,37 @@ export type EditorState = {
   redoStack: HistoryEntry[];
   historyGestureActive: boolean;
   historyGestureHasCommit: boolean;
+  /** `manifest.json`'s last known content: `undefined` only before the working copy finishes loading. */
+  manifest: ProjectManifest | undefined;
+  /** Display name of the folder the working copy is bound to (Save/Save As/Open), or `null` if unbound. */
+  folderName: string | null;
+  /** True once the working copy has diverged from the last successful Save/Open. */
+  dirty: boolean;
+  /** True while a Save/Save As/Open is in flight, to ignore re-entrant Ctrl+S / toolbar clicks. */
+  folderBusy: boolean;
+  /** True while the one-time IndexedDB working-copy bootstrap is still resolving (browser only). */
+  bootstrapping: boolean;
+  /**
+   * True once the user has actually entered the editor for the current working copy (New/Open/Continue).
+   * The editor always starts at the startup screen regardless of what's already in IndexedDB.
+   */
+  projectOpen: boolean;
+  /** Set while New/Open is waiting on an explicit Save/Discard/Cancel choice because the working copy is dirty. */
+  pendingWorkspaceSwitch: "new" | "open" | null;
+  /** Enters the editor with whatever working copy is already loaded (from IndexedDB bootstrap). */
+  continueProject(): void;
+  /** Builds a brand-new, unbound project from scratch and enters the editor. Bypasses the dirty guard. */
+  createNewProject(name: string): Promise<void>;
+  /** Command-bound entry point for New: guards on `dirty`, then prompts for a name and calls `createNewProject`. */
+  newProject(): void;
+  /** Save; behaves like Save As when no folder is bound yet. */
+  saveProject(): Promise<void>;
+  /** Always prompts for a (possibly different) folder. */
+  saveProjectAs(): Promise<void>;
+  /** Command-bound entry point for Open: guards on `dirty`, then opens the folder picker. */
+  openProject(): void;
+  /** Resolves a pending New/Open dirty-guard prompt. */
+  resolvePendingWorkspaceSwitch(action: "save" | "discard" | "cancel"): Promise<void>;
   setActiveProfile(profile: LayoutProfileId): void;
   setActiveTool(tool: EditorTool): void;
   setViewMode(mode: ViewMode): void;
@@ -62,11 +93,14 @@ export type EditorState = {
   previewProgressBar(nodeId: string, progress: number): void;
   setNodeProfileAnchor(nodeId: string, anchor: AnchorRect, options: { setPivot: boolean; snap: boolean }): void;
   setNodeOrientationVisibility(nodeId: string, profile: LayoutProfileId, visible: boolean): void;
-  addImageAsset(name: string, source: { uri: string; mediaType: string }): void;
-  addFontAsset(name: string, family: string, weight: "normal" | "bold", style: "normal" | "italic", source: { uri: string; mediaType: string }): void;
-  addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;
-  addAtlasAsset(name: string, files: { json: AssetFile; texture: AssetFile }, frameNames: string[]): void;
-  addSoundAsset(name: string, source: { uri: string; mediaType: string }): void;
+  // `id`, when passed, is used as the new asset's stable ID instead of generating one: the caller (asset
+  // import) needs to know the ID upfront to store the asset's Blob at its final `assets/<id>/<fileName>`
+  // path in projectStore before the document mutation commits.
+  addImageAsset(name: string, source: { uri: string; mediaType: string }, id?: string): void;
+  addFontAsset(name: string, family: string, weight: "normal" | "bold", style: "normal" | "italic", source: { uri: string; mediaType: string }, id?: string): void;
+  addSpineAsset(name: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }, id?: string): void;
+  addAtlasAsset(name: string, files: { json: AssetFile; texture: AssetFile }, frameNames: string[], id?: string): void;
+  addSoundAsset(name: string, source: { uri: string; mediaType: string }, id?: string): void;
   setImageNodeAsset(nodeId: string, assetId: string): void;
   replaceAssetSource(assetId: string, source: { uri: string; mediaType: string }): void;
   replaceSpineAssetFiles(assetId: string, files: { skeleton: AssetFile; atlas: AssetFile; textures: AssetFile[] }): void;

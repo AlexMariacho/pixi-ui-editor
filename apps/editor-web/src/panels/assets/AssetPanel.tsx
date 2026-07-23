@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import type { Asset, AssetFile } from "@pixi-ui-editor/schema";
+import { assetFilePath, collectAssetFileEntries, createStableId, fontFileName, imageFileName, soundFileName, type Asset, type AssetFile } from "@pixi-ui-editor/schema";
 import { Application } from "pixi.js";
 import { createSpineView, type SkeletonData } from "@pixi-ui-editor/runtime-pixi";
 import { clearEditorSpineCache, collectRenderedAssetIds, getCachedAtlasJson, loadEditorAtlasJson, loadEditorSpineAsset, resolveAssetUrl } from "../../shared/assets.js";
+import { registerAssetUrl, unregisterAssetUrl } from "../../shared/assetUrlRegistry.js";
+import { projectStore } from "../../shared/projectStore/index.js";
 import { useEditorStore, type AtlasAsset } from "../../store/index.js";
 import { ASSETS_WINDOW_MIN_SIZE, useUiPrefsStore } from "../../shared/uiPrefs.js";
 import { FloatingWindow } from "../../shared/FloatingWindow.js";
 import { deriveAssetBrowser, type BrowserAsset } from "./assetBrowserViewModel.js";
 import { groupSpineFileBundles } from "./spineImport.js";
 
-const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
+// Protects against an accidentally huge drop, not against total storage size: IndexedDB Blobs replace the old
+// localStorage data-URI limit, so this is far more generous than the previous 2 MB.
+const MAX_IMAGE_SIZE_BYTES = 50 * 1024 * 1024;
 const MAX_ATLAS_TEXTURE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_SOUND_SIZE_BYTES = 10 * 1024 * 1024;
 const SOUND_EXTENSIONS: Record<string, string> = { ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".aac": "audio/aac", ".m4a": "audio/mp4" };
@@ -22,12 +26,32 @@ const extension = (name: string) => name.slice(name.lastIndexOf(".")).toLowerCas
 const isSound = (file: File) => file.type.startsWith("audio/") || extension(file.name) in SOUND_EXTENSIONS;
 const soundMediaType = (file: File) => file.type || SOUND_EXTENSIONS[extension(file.name)] || "application/octet-stream";
 const assetNameFromFile = (name: string) => name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
-const readFile = (file: File): Promise<AssetFile> => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.addEventListener("load", () => typeof reader.result === "string" ? resolve({ name: file.name, uri: reader.result, mediaType: file.type || "application/octet-stream" }) : reject(new Error(`'${file.name}' could not be read.`)));
-  reader.addEventListener("error", () => reject(new Error(`'${file.name}' could not be read.`)));
-  reader.readAsDataURL(file);
-});
+
+/**
+ * Stores `file`'s bytes as a Blob in the projectStore working copy under the fixed `assets/<assetId>/<fileName>`
+ * layout and registers a blob URL for it, so the document only ever gets a relative-path URI (never a data URI).
+ */
+async function stageAssetBlob(assetId: string, fileName: string, mediaType: string, file: File): Promise<string> {
+  const path = assetFilePath(assetId, fileName);
+  const blob = new Blob([file], { type: mediaType });
+  await projectStore.putAssetBlob(path, blob);
+  registerAssetUrl(path, URL.createObjectURL(blob));
+  return path;
+}
+
+/** Spine/atlas files keep their originally uploaded file name for both display and their relative path segment. */
+async function stageAssetFile(assetId: string, file: File, mediaType: string): Promise<AssetFile> {
+  const uri = await stageAssetBlob(assetId, file.name, mediaType, file);
+  return { name: file.name, uri, mediaType };
+}
+
+/** Releases every Blob/blob URL an asset owns, e.g. before it is replaced under a different file name or deleted. */
+async function releaseAssetFiles(asset: Asset): Promise<void> {
+  for (const entry of collectAssetFileEntries(asset)) {
+    unregisterAssetUrl(entry.path);
+    await projectStore.deleteAssetBlob(entry.path);
+  }
+}
 
 function AssetPreview({ asset }: { asset: Asset }) {
   const [failed, setFailed] = useState(false);
@@ -216,10 +240,14 @@ export function AssetPanel() {
       if (target !== undefined && spineImport.bundles.length !== 1) { window.alert("Spine replacement needs exactly one complete bundle."); return; }
       try {
         for (const sourceBundle of spineImport.bundles) {
-          const [skeleton, atlasFile, ...textureFiles] = await Promise.all([sourceBundle.skeleton, sourceBundle.atlas, ...sourceBundle.textures].map(readFile));
+          const assetId = target?.id ?? createStableId();
+          if (target !== undefined) { clearEditorSpineCache(target.files.skeleton.uri); await releaseAssetFiles(target); }
+          const [skeleton, atlasFile, ...textureFiles] = await Promise.all(
+            [sourceBundle.skeleton, sourceBundle.atlas, ...sourceBundle.textures].map((file) => stageAssetFile(assetId, file, file.type || "application/octet-stream")),
+          );
           const bundle = { skeleton, atlas: atlasFile, textures: textureFiles };
-          if (target === undefined) addSpineAsset(sourceBundle.name, bundle);
-          else { clearEditorSpineCache(target.files.skeleton.uri); replaceSpineAssetFiles(target.id, bundle); }
+          if (target === undefined) addSpineAsset(sourceBundle.name, bundle, assetId);
+          else replaceSpineAssetFiles(target.id, bundle);
         }
       } catch (error) { console.warn("Unable to import Spine files.", error); window.alert("The Spine files could not be read."); }
       files = spineImport.remaining;
@@ -234,8 +262,12 @@ export function AssetPanel() {
       if (textures.length !== 1) { window.alert("Atlas import needs exactly one spritesheet .json and exactly one PNG, WebP, or JPG texture."); return; }
       if (textures[0]!.size > MAX_ATLAS_TEXTURE_SIZE_BYTES) { window.alert(`'${textures[0]!.name}' exceeds the 16 MB atlas texture limit.`); return; }
       try {
-        const [json, texture] = await Promise.all([readFile(atlasJsonFile.file), readFile(textures[0]!)]);
-        addAtlasAsset(assetNameFromFile(atlasJsonFile.file.name), { json, texture }, atlasJsonFile.frameNames);
+        const assetId = createStableId();
+        const [json, texture] = await Promise.all([
+          stageAssetFile(assetId, atlasJsonFile.file, atlasJsonFile.file.type || "application/octet-stream"),
+          stageAssetFile(assetId, textures[0]!, textures[0]!.type || "application/octet-stream"),
+        ]);
+        addAtlasAsset(assetNameFromFile(atlasJsonFile.file.name), { json, texture }, atlasJsonFile.frameNames, assetId);
       } catch (error) { console.warn("Unable to import atlas files.", error); window.alert("The atlas files could not be read."); }
       return;
     }
@@ -243,22 +275,48 @@ export function AssetPanel() {
     if (assetIdToReplace !== null && files.length !== 1) { window.alert("Image replacement requires exactly one image file."); return; }
     for (const file of files) {
       if (isSound(file)) {
-        if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "sound") { window.alert("A sound can only replace a sound asset."); continue; }
+        const existing = assetIdToReplace === null ? undefined : assets.find((asset) => asset.id === assetIdToReplace);
+        if (assetIdToReplace !== null && existing?.type !== "sound") { window.alert("A sound can only replace a sound asset."); continue; }
         const mediaType = soundMediaType(file);
         if (mediaType === "application/octet-stream") { window.alert(`'${file.name}' is not a supported audio format.`); continue; }
         if (file.size > MAX_SOUND_SIZE_BYTES) { window.alert(`'${file.name}' exceeds the 10 MB sound limit.`); continue; }
-        try { const source = await readFile(file); if (assetIdToReplace === null) addSoundAsset(assetNameFromFile(file.name), { uri: source.uri, mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
+        try {
+          const assetId = existing?.id ?? createStableId();
+          const name = existing?.name ?? assetNameFromFile(file.name);
+          if (existing !== undefined) await releaseAssetFiles(existing);
+          const uri = await stageAssetBlob(assetId, soundFileName({ name, source: { mediaType } }), mediaType, file);
+          if (existing === undefined) addSoundAsset(name, { uri, mediaType }, assetId);
+          else replaceAssetSource(assetId, { uri, mediaType });
+        } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
         continue;
       }
       const isFont = ACCEPTED_FONT_TYPES.has(file.type) || fontExtension.test(file.name);
       if (isFont) {
-        if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "font") { window.alert("A font can only replace a font asset."); continue; }
-        try { const source = await readFile(file); const mediaType = fontMediaType(file); if (assetIdToReplace === null) addFontAsset(assetNameFromFile(file.name), assetNameFromFile(file.name), "normal", "normal", { uri: source.uri, mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
+        const existing = assetIdToReplace === null ? undefined : assets.find((asset) => asset.id === assetIdToReplace);
+        if (assetIdToReplace !== null && existing?.type !== "font") { window.alert("A font can only replace a font asset."); continue; }
+        try {
+          const mediaType = fontMediaType(file);
+          const assetId = existing?.id ?? createStableId();
+          const name = existing?.name ?? assetNameFromFile(file.name);
+          if (existing !== undefined) await releaseAssetFiles(existing);
+          const uri = await stageAssetBlob(assetId, fontFileName({ name, source: { mediaType } }), mediaType, file);
+          if (existing === undefined) addFontAsset(name, name, "normal", "normal", { uri, mediaType }, assetId);
+          else replaceAssetSource(assetId, { uri, mediaType });
+        } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
         continue;
       }
-      if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES) { window.alert(`'${file.name}' is not a supported image up to 2 MB.`); continue; }
-      if (assetIdToReplace !== null && assets.find((asset) => asset.id === assetIdToReplace)?.type !== "image") { window.alert("An image can only replace an image asset."); continue; }
-      try { const source = await readFile(file); if (assetIdToReplace === null) addImageAsset(assetNameFromFile(file.name), { uri: source.uri, mediaType: source.mediaType }); else replaceAssetSource(assetIdToReplace, { uri: source.uri, mediaType: source.mediaType }); } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
+      if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES) { window.alert(`'${file.name}' is not a supported image up to 50 MB.`); continue; }
+      const existing = assetIdToReplace === null ? undefined : assets.find((asset) => asset.id === assetIdToReplace);
+      if (assetIdToReplace !== null && existing?.type !== "image") { window.alert("An image can only replace an image asset."); continue; }
+      try {
+        const mediaType = file.type;
+        const assetId = existing?.id ?? createStableId();
+        const name = existing?.name ?? assetNameFromFile(file.name);
+        if (existing !== undefined) await releaseAssetFiles(existing);
+        const uri = await stageAssetBlob(assetId, imageFileName({ name, source: { mediaType } }), mediaType, file);
+        if (existing === undefined) addImageAsset(name, { uri, mediaType }, assetId);
+        else replaceAssetSource(assetId, { uri, mediaType });
+      } catch (error) { console.warn(`Unable to import '${file.name}'.`, error); }
     }
     setReplaceAssetId(null);
   };
@@ -313,7 +371,7 @@ export function AssetPanel() {
       <div className="asset-details"><span className="asset-name-line"><span className="asset-name" title={asset.name}>{asset.name}</span>{asset.type === "spine" && <SpineAssetWarning asset={asset} />}</span><span className="asset-type">{asset.type}{isAtlas ? ` · ${Object.keys(asset.frames).length} frames` : ""}</span></div>
       {viewMode === "list" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
       {viewMode === "grid" && <span className="asset-usage">Used by {usage} node{usage === 1 ? "" : "s"}</span>}
-      <div className="asset-actions"><button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }}>Delete</button></div>
+      <div className="asset-actions"><button type="button" disabled={isAtlas} title={isAtlas ? "Replace comes in a later task" : undefined} onClick={(event) => { event.stopPropagation(); setReplaceAssetId(asset.id); inputRef.current?.click(); }}>Replace</button><button type="button" disabled={usage > 0} title={usage ? `Used by ${usage} node(s)` : undefined} onClick={(event) => { event.stopPropagation(); void releaseAssetFiles(asset).catch((error) => console.warn(`Unable to release stored files for asset '${asset.id}'.`, error)); deleteAsset(asset.id); }}>Delete</button></div>
     </>;
     if (!isAtlas) return <li key={asset.id} draggable className={`${rowClassName}${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</li>;
     return <li key={asset.id} className="atlas-group"><div draggable className={`${rowClassName} atlas-group-header${selectedId === asset.id ? " asset-selected" : ""}`} onDragStart={dragStart(asset.id)} onClick={() => setSelectedId(asset.id)}>{content}</div>{expanded && <ul className={`atlas-frames atlas-frames-${viewMode}`}>{frames.map(([frameName, frameId]) => frameItem(asset, frameName, frameId))}</ul>}</li>;

@@ -13,10 +13,18 @@ import { SceneCanvas } from "./canvas/SceneCanvas.js";
 import { HierarchyTree } from "./panels/hierarchy/HierarchyTree.js";
 import { ScreenResolutionsMenu } from "./panels/toolbar/ScreenResolutionsMenu.js";
 import { WindowsSection } from "./panels/toolbar/WindowsSection.js";
+import { commandTitle } from "./panels/toolbar/ToolPanel.js";
+import { StartupScreen } from "./panels/startup/StartupScreen.js";
+import { WorkspaceSwitchDialog } from "./panels/startup/WorkspaceSwitchDialog.js";
 export function App() {
   const document = useEditorStore((state) => state.document);
   const sceneId = useEditorStore((state) => state.sceneId);
   const activeProfile = useEditorStore((state) => state.activeProfile);
+  const projectOpen = useEditorStore((state) => state.projectOpen);
+  const manifest = useEditorStore((state) => state.manifest);
+  const folderName = useEditorStore((state) => state.folderName);
+  const dirty = useEditorStore((state) => state.dirty);
+  const folderBusy = useEditorStore((state) => state.folderBusy);
   const activeTool = useEditorStore((state) => state.activeTool);
   const viewMode = useEditorStore((state) => state.viewMode);
   const setActiveProfile = useEditorStore((state) => state.setActiveProfile);
@@ -45,6 +53,18 @@ export function App() {
     window.addEventListener("keydown", dispatchEditorKeyboardEvent, true);
     return () => window.removeEventListener("keydown", dispatchEditorKeyboardEvent, true);
   }, []);
+
+  useEffect(() => {
+    // The working copy always lives in IndexedDB regardless of this prompt; it only warns about unsaved
+    // changes to the bound project folder (or "not yet saved to a folder" if none is bound).
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!useEditorStore.getState().dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
   const scene = document.scenes.find((candidate) => candidate.id === sceneId);
   const editingPrefab = document.prefabs.find((candidate) => candidate.id === editingPrefabId);
 
@@ -63,6 +83,8 @@ export function App() {
   const presetsWindowOpen = useUiPrefsStore((state) => state.presetsWindowOpen);
   const setPresetsWindowOpen = useUiPrefsStore((state) => state.setPresetsWindowOpen);
 
+  if (!projectOpen) return <><StartupScreen /><WorkspaceSwitchDialog /></>;
+
   if (scene === undefined || renderDocument === undefined) return <main className="load-error">Selected scene does not exist in the project document.</main>;
 
   const owner = editingPrefab ?? scene;
@@ -77,12 +99,41 @@ export function App() {
   const viewport = scene.layout.referenceViewports[activeProfile];
 
   return (
+    <>
     <main className="editor-shell">
       <header className="toolbar">
         <strong>Pixi UI Editor</strong>
         <ScreenResolutionsMenu activeProfile={activeProfile} viewport={viewport} setActiveProfile={setActiveProfile} updateReferenceViewport={updateReferenceViewport} />
-        <span>{document.project.name}</span>
+        <span className="toolbar-project-name" title={dirty ? "Unsaved changes" : "Saved"}>
+          {manifest?.name ?? document.project.name}
+          {dirty && <span className="toolbar-dirty-marker" aria-label="Unsaved changes">•</span>}
+        </span>
+        <span className="toolbar-folder-binding">{folderName === null ? "Not saved to a folder" : folderName}</span>
         <div className="toolbar-actions">
+          <button
+            type="button"
+            title={commandTitle(EDITOR_COMMAND_IDS.projectNew)}
+            disabled={folderBusy || !editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.projectNew)}
+            onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.projectNew)}
+          >New</button>
+          <button
+            type="button"
+            title={commandTitle(EDITOR_COMMAND_IDS.projectOpen)}
+            disabled={folderBusy || !editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.projectOpen)}
+            onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.projectOpen)}
+          >Open</button>
+          <button
+            type="button"
+            title={commandTitle(EDITOR_COMMAND_IDS.projectSaveAs)}
+            disabled={folderBusy || !editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.projectSaveAs)}
+            onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.projectSaveAs)}
+          >Save As</button>
+          <button
+            type="button"
+            title={commandTitle(EDITOR_COMMAND_IDS.projectSave)}
+            disabled={folderBusy || !editorCommandRegistry.isEnabled(EDITOR_COMMAND_IDS.projectSave)}
+            onClick={() => editorCommandRegistry.execute(EDITOR_COMMAND_IDS.projectSave)}
+          >{folderBusy ? "Saving…" : "Save"}</button>
           <button type="button" onClick={() => {
             if (!openRuntimePreview({ document, sceneId, profile: activeProfile }, viewport)) {
               window.alert("Preview window was blocked by the browser. Allow popups for this site and try again.");
@@ -103,5 +154,7 @@ export function App() {
       <section className="canvas-panel"><SceneCanvas document={renderDocument} sceneId={editingPrefab?.id ?? sceneId} activeProfile={activeProfile} activeTool={activeTool} viewMode={viewMode} selectedNodeIds={selectedNodeIds} selectedNodeId={selectedNodeId} editingPrefabName={editingPrefab?.name ?? null} spineFrameRequest={spineFrameRequest} spineAutoplay={spineAutoplay} buttonPreviewState={buttonPreviewState} sliderPreviewValue={sliderPreviewValue} progressBarPreviewValue={progressBarPreviewValue} deleteDisabled={deleteDisabled} setActiveProfile={setActiveProfile} addNode={addNode} addNodeFromAsset={addNodeFromAsset} addPrefabInstance={addPrefabInstance} finishEditingPrefab={() => setEditingPrefabId(null)} />{assetsWindowOpen && <AssetsWindow />}{presetsWindowOpen && <PresetsWindow />}</section>
       <aside className="panel inspector-panel"><h1>Inspector</h1><Inspector selectedNode={selectedNode} readOnly={selectedNodeIsPresetContent} /></aside>
     </main>
+    <WorkspaceSwitchDialog />
+    </>
   );
 }
